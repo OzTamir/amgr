@@ -119,6 +119,7 @@ sourceCommand
   .command('add <url-or-path>')
   .description('Add a rules source (git URL or local path)')
   .option('-v, --verbose', 'Enable verbose output')
+  .option('-g, --global', 'Add as a global source (available to all projects)')
   .option('--position <index>', 'Insert at specific position (default: append)')
   .option('--name <name>', 'Optional alias for the source')
   .action(sourceAdd);
@@ -127,6 +128,7 @@ sourceCommand
   .command('remove <index-or-name>')
   .description('Remove a source from the config')
   .option('-v, --verbose', 'Enable verbose output')
+  .option('-g, --global', 'Remove from global sources')
   .option('-f, --force', 'Skip confirmation prompt')
   .action(sourceRemove);
 
@@ -134,12 +136,14 @@ sourceCommand
   .command('list')
   .description('List configured sources and their status')
   .option('-v, --verbose', 'Show additional details')
+  .option('-g, --global', 'Show only global sources')
   .action(sourceList);
 
 sourceCommand
   .command('update')
   .description('Refresh all git sources')
   .option('-v, --verbose', 'Enable verbose output')
+  .option('-g, --global', 'Update only global sources')
   .action(sourceUpdate);
 
 // Parse arguments

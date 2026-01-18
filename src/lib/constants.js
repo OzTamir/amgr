@@ -56,7 +56,14 @@ export const DEFAULT_OPTIONS = {
   simulateCommands: false,
   simulateSubagents: false,
   simulateSkills: false,
-  modularMcp: false
+  modularMcp: false,
+  ignoreGlobalSources: false,
+  globalSourcesPosition: 'prepend'
+};
+
+export const GLOBAL_SOURCES_POSITION = {
+  PREPEND: 'prepend',
+  APPEND: 'append'
 };
 
 // Entity types that can be composed

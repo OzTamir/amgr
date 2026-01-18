@@ -1,0 +1,75 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://raw.githubusercontent.com/oztamir/amgr/main/schemas/amgr-global.schema.json",
+  "title": "amgr Global Configuration",
+  "description": "Global configuration schema for amgr - defines sources available to all projects",
+  "type": "object",
+  "properties": {
+    "$schema": {
+      "type": "string",
+      "description": "JSON Schema reference for IDE validation"
+    },
+    "globalSources": {
+      "type": "array",
+      "description": "Sources available to all projects. These are merged with project-specific sources during sync.",
+      "items": {
+        "oneOf": [
+          {
+            "type": "string",
+            "description": "Git URL or local path (type auto-detected)"
+          },
+          {
+            "type": "object",
+            "description": "Git source",
+            "required": ["type", "url"],
+            "properties": {
+              "type": {
+                "const": "git",
+                "description": "Source type"
+              },
+              "url": {
+                "type": "string",
+                "description": "Git repository URL"
+              },
+              "name": {
+                "type": "string",
+                "description": "Optional display name for the source"
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "description": "Local source",
+            "required": ["type", "path"],
+            "properties": {
+              "type": {
+                "const": "local",
+                "description": "Source type"
+              },
+              "path": {
+                "type": "string",
+                "description": "Local file system path (supports ~ for home directory)"
+              },
+              "name": {
+                "type": "string",
+                "description": "Optional display name for the source"
+              }
+            },
+            "additionalProperties": false
+          }
+        ]
+      },
+      "examples": [
+        [
+          { "type": "local", "path": "~/Code/agents", "name": "agents" }
+        ],
+        [
+          { "type": "git", "url": "https://github.com/company/agent-rules", "name": "company" },
+          { "type": "local", "path": "~/my-agents" }
+        ]
+      ]
+    }
+  },
+  "additionalProperties": false
+}

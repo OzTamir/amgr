@@ -263,18 +263,34 @@ project/
 
 ```
 ~/.amgr/
+├── config.json                      # Global configuration (sources)
 └── cache/
     ├── github.com-company-rules/    # Cloned git repos
     └── github.com-user-agents/
 ```
 
+- **config.json**: Global sources available to all projects
 - **cache/**: Cloned git repositories for remote sources
 - Each git source has a directory named from normalized URL
 - Updated automatically during sync, manually via `amgr source update`
 
-### No Global State
+### Global Sources
 
-amgr does not maintain global configuration. Each project is independent.
+amgr supports global sources that are automatically available to all projects. Global sources are configured in `~/.amgr/config.json`:
+
+```json
+{
+  "globalSources": [
+    { "type": "local", "path": "~/Code/agents", "name": "agents" }
+  ]
+}
+```
+
+**Behavior:**
+- Global sources are merged with project-specific sources during sync
+- By default, global sources are prepended (project sources override global)
+- Projects can control merge behavior via `options.globalSourcesPosition`
+- Projects can opt out entirely via `options.ignoreGlobalSources: true`
 
 ## Key Design Decisions
 

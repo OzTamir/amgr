@@ -25,6 +25,11 @@ amgr init
 amgr sync
 ```
 
+**Tip:** Set up a global source once to use it across all projects:
+```bash
+amgr source add ~/Code/my-agents --global
+```
+
 ## Commands
 
 ### `amgr` or `amgr sync`
@@ -141,7 +146,35 @@ Manually refresh all Git sources (fetch latest changes).
 
 ```bash
 amgr source update
+amgr source update --global    # Update only global sources
 ```
+
+### Global Sources
+
+Global sources are configured once in `~/.amgr/config.json` and are automatically available to all projects.
+
+```bash
+# Add a global source (available to all projects)
+amgr source add ~/Code/my-agents --global
+amgr source add https://github.com/company/rules --global
+
+# List global sources
+amgr source list --global
+
+# Remove a global source
+amgr source remove agents --global
+```
+
+**Global config (`~/.amgr/config.json`):**
+```json
+{
+  "globalSources": [
+    { "type": "local", "path": "~/Code/agents", "name": "agents" }
+  ]
+}
+```
+
+By default, global sources are prepended to project sources (project sources override global). Projects can control this behavior via `options.ignoreGlobalSources` and `options.globalSourcesPosition`.
 
 ### Source Layering
 
@@ -336,10 +369,21 @@ Advanced configuration options:
     "simulateCommands": false,
     "simulateSubagents": false,
     "simulateSkills": false,
-    "modularMcp": false
+    "modularMcp": false,
+    "ignoreGlobalSources": false,
+    "globalSourcesPosition": "prepend"
   }
 }
 ```
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `simulateCommands` | boolean | `false` | Generate simulated commands for tools without native support |
+| `simulateSubagents` | boolean | `false` | Generate simulated subagents for tools without native support |
+| `simulateSkills` | boolean | `false` | Generate simulated skills for tools without native support |
+| `modularMcp` | boolean | `false` | Enable modular-mcp for Claude Code (reduces token usage) |
+| `ignoreGlobalSources` | boolean | `false` | Ignore global sources for this project |
+| `globalSourcesPosition` | string | `"prepend"` | Where to merge global sources: `"prepend"` (project overrides global) or `"append"` (global overrides project) |
 
 ## File Tracking
 
@@ -367,14 +411,15 @@ Git sources are cached locally in `~/.amgr/cache/`:
 
 ```
 ~/.amgr/
-├── cache/
-│   ├── github.com-company-agent-rules/
-│   │   ├── .git/
-│   │   ├── repo.json
-│   │   ├── shared/
-│   │   └── use-cases/
-│   └── github.com-other-repo/
-│       └── ...
+├── config.json                        # Global sources configuration
+└── cache/
+    ├── github.com-company-agent-rules/
+    │   ├── .git/
+    │   ├── repo.json
+    │   ├── shared/
+    │   └── use-cases/
+    └── github.com-other-repo/
+        └── ...
 ```
 
 - On `amgr sync`: Git sources are automatically pulled (updated)

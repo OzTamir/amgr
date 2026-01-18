@@ -9,7 +9,8 @@ import {
   CONFIG_FILE,
   VALID_TARGETS,
   VALID_FEATURES,
-  DEFAULT_OPTIONS
+  DEFAULT_OPTIONS,
+  GLOBAL_SOURCES_POSITION
 } from './constants.js';
 import { validateSources } from './sources.js';
 
@@ -131,13 +132,20 @@ export function validateConfig(config) {
       errors.push('Property "options" must be an object');
     } else {
       const validOptionKeys = Object.keys(DEFAULT_OPTIONS);
+      const booleanOptions = ['simulateCommands', 'simulateSubagents', 'simulateSkills', 'modularMcp', 'ignoreGlobalSources'];
+      const validPositions = Object.values(GLOBAL_SOURCES_POSITION);
+      
       for (const key of Object.keys(config.options)) {
         if (!validOptionKeys.includes(key)) {
           errors.push(
             `Invalid option '${key}'.\n` +
             `Valid options: ${validOptionKeys.join(', ')}`
           );
-        } else if (typeof config.options[key] !== 'boolean') {
+        } else if (key === 'globalSourcesPosition') {
+          if (!validPositions.includes(config.options[key])) {
+            errors.push(`Option 'globalSourcesPosition' must be one of: ${validPositions.join(', ')}`);
+          }
+        } else if (booleanOptions.includes(key) && typeof config.options[key] !== 'boolean') {
           errors.push(`Option '${key}' must be a boolean`);
         }
       }

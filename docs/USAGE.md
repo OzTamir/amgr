@@ -166,6 +166,113 @@ amgr source list --verbose    # Show full URLs/paths
 amgr source update    # Refresh all git sources
 ```
 
+## Global Sources
+
+Global sources are configured once and automatically available to all projects. This is ideal for personal agent configurations you use across many projects.
+
+### Global Sources Configuration
+
+Global sources are stored in `~/.amgr/config.json`:
+
+```json
+{
+  "globalSources": [
+    { "type": "local", "path": "~/Code/agents", "name": "agents" }
+  ]
+}
+```
+
+### Managing Global Sources
+
+#### Add a Global Source
+
+```bash
+amgr source add ~/Code/my-agents --global
+amgr source add https://github.com/company/rules --global --name company
+```
+
+#### Remove a Global Source
+
+```bash
+amgr source remove 0 --global          # By index
+amgr source remove agents --global     # By name
+```
+
+#### List Global Sources
+
+```bash
+amgr source list --global              # Show only global sources
+amgr source list                       # Show both global and project sources
+```
+
+#### Update Global Sources
+
+```bash
+amgr source update --global            # Update only global git sources
+amgr source update                     # Update all git sources
+```
+
+### How Global Sources Merge with Project Sources
+
+By default, global sources are prepended to project sources:
+
+```
+Effective order: [global sources...] → [project sources...]
+```
+
+This means project sources override global sources when files conflict.
+
+### Project-Level Control
+
+Projects can control how global sources are handled in `.amgr/config.json`:
+
+```json
+{
+  "options": {
+    "ignoreGlobalSources": false,
+    "globalSourcesPosition": "prepend"
+  }
+}
+```
+
+| Option | Values | Description |
+|--------|--------|-------------|
+| `ignoreGlobalSources` | `true`/`false` (default: `false`) | Ignore global sources for this project |
+| `globalSourcesPosition` | `"prepend"` (default) / `"append"` | Where to merge global sources |
+
+**Position behavior:**
+- `"prepend"`: Global sources first, then project sources (project overrides global)
+- `"append"`: Project sources first, then global sources (global overrides project)
+
+### Example: Personal + Company Sources
+
+**Global config (`~/.amgr/config.json`):**
+```json
+{
+  "globalSources": [
+    { "type": "local", "path": "~/Code/my-agents", "name": "personal" }
+  ]
+}
+```
+
+**Project config (`.amgr/config.json`):**
+```json
+{
+  "sources": [
+    { "type": "git", "url": "https://github.com/company/rules", "name": "company" }
+  ],
+  "targets": ["claudecode"],
+  "features": ["rules"],
+  "use-cases": ["development"]
+}
+```
+
+**Effective sources (in order):**
+1. `personal` (global, from ~/.amgr/config.json)
+2. `company` (project, from .amgr/config.json)
+
+Company rules override personal rules when paths conflict.
+
 ### `amgr repo` - Repository Management
 
 For managing amgr source repositories.

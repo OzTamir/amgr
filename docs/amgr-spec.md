@@ -611,6 +611,93 @@ use-cases:
 | `AMGR_CONFIG` | Override the default config file path (default: `.amgr/config.json`) |
 | `AMGR_VERBOSE` | Enable verbose logging (`true`/`false`) |
 
+## Global Sources
+
+Global sources are configured in `~/.amgr/config.json` and are automatically available to all projects.
+
+### Global Configuration File
+
+**Location:** `~/.amgr/config.json`
+
+**Schema:** `https://raw.githubusercontent.com/oztamir/amgr/main/schemas/amgr-global.schema.json`
+
+**Structure:**
+```json
+{
+  "$schema": "https://raw.githubusercontent.com/oztamir/amgr/main/schemas/amgr-global.schema.json",
+  "globalSources": [
+    { "type": "local", "path": "~/Code/agents", "name": "agents" }
+  ]
+}
+```
+
+### Global Source Commands
+
+#### `amgr source add <url-or-path> --global`
+Add a source to the global configuration.
+
+```bash
+amgr source add ~/Code/agents --global
+amgr source add https://github.com/company/rules --global --name company
+```
+
+#### `amgr source remove <index-or-name> --global`
+Remove a source from the global configuration.
+
+```bash
+amgr source remove 0 --global
+amgr source remove agents --global
+```
+
+#### `amgr source list --global`
+List only global sources.
+
+```bash
+amgr source list --global
+```
+
+#### `amgr source update --global`
+Update only global git sources.
+
+```bash
+amgr source update --global
+```
+
+### Global Source Merge Behavior
+
+During sync, global sources are merged with project sources:
+
+1. **Default (prepend)**: Global sources come first, project sources override them
+2. **Append mode**: Project sources come first, global sources override them
+
+**Effective sources order with `prepend` (default):**
+```
+[global source 1] → [global source 2] → [project source 1] → [project source 2]
+```
+
+**Effective sources order with `append`:**
+```
+[project source 1] → [project source 2] → [global source 1] → [global source 2]
+```
+
+### Project-Level Options for Global Sources
+
+Projects can control global source behavior in `.amgr/config.json`:
+
+```json
+{
+  "options": {
+    "ignoreGlobalSources": true,
+    "globalSourcesPosition": "append"
+  }
+}
+```
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `ignoreGlobalSources` | boolean | `false` | Ignore global sources for this project |
+| `globalSourcesPosition` | string | `"prepend"` | Where to merge global sources: `"prepend"` or `"append"` |
+
 ## File Management
 
 ### Lock File

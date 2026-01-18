@@ -133,6 +133,17 @@
           "type": "boolean",
           "default": false,
           "description": "Enable modular-mcp for Claude Code (reduces token usage)"
+        },
+        "ignoreGlobalSources": {
+          "type": "boolean",
+          "default": false,
+          "description": "Ignore global sources for this project (use only project-specific sources)"
+        },
+        "globalSourcesPosition": {
+          "type": "string",
+          "enum": ["prepend", "append"],
+          "default": "prepend",
+          "description": "Where to insert global sources relative to project sources. 'prepend' (default): global first, project overrides. 'append': project first, global overrides."
         }
       },
       "additionalProperties": false

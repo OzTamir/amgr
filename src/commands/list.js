@@ -4,50 +4,86 @@ import { configExists, loadConfig, hasSources } from '../lib/config.js';
 import {
   resolveSources,
   getCombinedUseCases,
-  getSourceDisplayName
+  getSourceDisplayName,
+  getMergedSources,
+  parseSource,
+  SOURCE_TYPES
 } from '../lib/sources.js';
+import { getGlobalSources, hasGlobalSources } from '../lib/global-config.js';
 
 export async function list(options = {}) {
   const projectPath = process.cwd();
   const logger = createLogger(options.verbose);
 
-  if (!configExists(projectPath)) {
-    console.log('\nNo .amgr/config.json found in current directory.');
-    console.log('Run "amgr init" to create one.\n');
-    return;
+  const globalSources = getGlobalSources();
+  const hasProjectConfig = configExists(projectPath);
+  let config = null;
+  let projectSources = [];
+
+  if (hasProjectConfig) {
+    try {
+      config = loadConfig(projectPath);
+      projectSources = config.sources || [];
+    } catch (e) {
+      logger.error(e.message);
+      process.exit(1);
+    }
   }
 
-  let config;
-  try {
-    config = loadConfig(projectPath);
-  } catch (e) {
-    logger.error(e.message);
-    process.exit(1);
-  }
+  const mergedSources = config 
+    ? getMergedSources(config, globalSources)
+    : globalSources;
 
-  if (!hasSources(config)) {
+  if (mergedSources.length === 0) {
     console.log('\nNo sources configured.');
-    console.log('Run "amgr source add <url-or-path>" to add a source.\n');
+    if (hasProjectConfig) {
+      console.log('Add a global source: amgr source add <path> --global');
+      console.log('Or add a project source: amgr source add <path>');
+    } else {
+      console.log('Add a global source: amgr source add <path> --global');
+      console.log('Or run "amgr init" to set up a project.');
+    }
+    console.log('');
     return;
   }
 
-  let resolvedSources = [];
-  try {
-    resolvedSources = resolveSources(config.sources, { 
-      logger, 
-      skipFetch: true 
-    });
-  } catch (e) {
-    logger.error(`Could not resolve sources: ${e.message}`);
-    process.exit(1);
+  let resolvedGlobal = [];
+  let resolvedProject = [];
+
+  if (globalSources.length > 0) {
+    try {
+      resolvedGlobal = resolveSources(globalSources, { logger, skipFetch: true });
+    } catch (e) {
+      logger.warn(`Could not resolve some global sources: ${e.message}`);
+    }
   }
 
-  console.log('\nConfigured sources:');
-  for (const source of resolvedSources) {
-    console.log(`  ${getSourceDisplayName(source)}`);
+  if (projectSources.length > 0) {
+    try {
+      resolvedProject = resolveSources(projectSources, { logger, skipFetch: true });
+    } catch (e) {
+      logger.warn(`Could not resolve some project sources: ${e.message}`);
+    }
   }
 
-  const combinedUseCases = getCombinedUseCases(resolvedSources);
+  if (resolvedGlobal.length > 0) {
+    console.log('\nGlobal sources:');
+    for (const source of resolvedGlobal) {
+      const typeLabel = source.type === SOURCE_TYPES.GIT ? 'git' : 'local';
+      console.log(`  ${typeLabel}: ${getSourceDisplayName(source)}`);
+    }
+  }
+
+  if (resolvedProject.length > 0) {
+    console.log('\nProject sources:');
+    for (const source of resolvedProject) {
+      const typeLabel = source.type === SOURCE_TYPES.GIT ? 'git' : 'local';
+      console.log(`  ${typeLabel}: ${getSourceDisplayName(source)}`);
+    }
+  }
+
+  const allResolved = [...resolvedGlobal, ...resolvedProject];
+  const combinedUseCases = getCombinedUseCases(allResolved);
   const useCaseNames = Object.keys(combinedUseCases).sort();
 
   console.log('\nAvailable use-cases:');
@@ -57,11 +93,15 @@ export async function list(options = {}) {
   } else {
     for (const name of useCaseNames) {
       const { description, sources } = combinedUseCases[name];
-      const sourceLabel = sources.length > 1 
+      const sourceLabel = sources.length > 1
         ? ` (${sources.join(', ')})`
         : ` (${sources[0]})`;
       console.log(`  ${name.padEnd(20)} - ${description}${sourceLabel}`);
     }
+  }
+
+  if (config && config['use-cases'] && config['use-cases'].length > 0) {
+    console.log(`\nCurrently selected: ${config['use-cases'].join(', ')}`);
   }
 
   if (options.verbose) {

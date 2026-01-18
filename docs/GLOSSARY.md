@@ -11,6 +11,7 @@ A repository or directory containing agent configurations that can be used by am
 **Types:**
 - **Git source**: A remote repository accessed via git URL (e.g., `https://github.com/company/agent-rules`)
 - **Local source**: A directory on the local filesystem (e.g., `~/my-agents` or `./local-rules`)
+- **Global source**: A source configured in `~/.amgr/config.json` that's available to all projects (see [Global Source](#global-source))
 
 **Structure:**
 ```
@@ -191,6 +192,34 @@ A file that amgr created and is listed in the lock file.
 - Updated during sync
 - Deleted during clean/detach
 - Replaced if the source changes
+
+---
+
+### Global Source
+
+A source configured in `~/.amgr/config.json` that is automatically available to all projects without needing to be added per-project.
+
+**Configuration:**
+```json
+{
+  "globalSources": [
+    { "type": "local", "path": "~/Code/agents", "name": "agents" }
+  ]
+}
+```
+
+**Commands:**
+- `amgr source add <path> --global` - Add a global source
+- `amgr source remove <index-or-name> --global` - Remove a global source
+- `amgr source list --global` - List only global sources
+- `amgr source update --global` - Update only global git sources
+
+**Merge behavior:**
+- By default, global sources are prepended to project sources (project overrides global)
+- Use `globalSourcesPosition: "append"` in project config to have global sources override project sources
+- Use `ignoreGlobalSources: true` in project config to ignore global sources entirely
+
+**Related:** See [Source Layering](#source-layering)
 
 ---
 

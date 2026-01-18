@@ -13,7 +13,8 @@ import { getTrackedFiles, removeTrackedFiles, writeLockFile } from '../lib/lock.
 import { compose, generateRulesyncConfig, writeRulesyncConfig } from '../lib/compose.js';
 import { deploy } from '../lib/deploy.js';
 import { createLogger, isVerbose } from '../lib/utils.js';
-import { resolveSources, getSourceDisplayName } from '../lib/sources.js';
+import { resolveSources, getMergedSources } from '../lib/sources.js';
+import { getGlobalSources } from '../lib/global-config.js';
 
 /**
  * Execute the sync command
@@ -38,10 +39,14 @@ export async function sync(options = {}) {
     logger.verbose(`Features: ${features.join(', ')}`);
     logger.verbose(`Use-cases: ${useCases.join(', ')}`);
 
-    if (!hasSources(config)) {
+    const globalSources = getGlobalSources();
+    const mergedSources = getMergedSources(config, globalSources);
+
+    if (mergedSources.length === 0) {
       throw new Error(
-        'No sources configured in .amgr/config.json.\n' +
-        'Run "amgr source add <url-or-path>" to add a source.'
+        'No sources configured.\n' +
+        'Add a global source: amgr source add <path> --global\n' +
+        'Or add a project source: amgr source add <path>'
       );
     }
 
@@ -52,10 +57,10 @@ export async function sync(options = {}) {
       );
     }
 
-    logger.info('Updating sources...');
+    logger.info('Resolving sources...');
     let resolvedSources = [];
     try {
-      resolvedSources = resolveSources(config.sources, { logger });
+      resolvedSources = resolveSources(mergedSources, { logger });
     } catch (e) {
       throw new Error(`Failed to resolve sources: ${e.message}`);
     }

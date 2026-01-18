@@ -1,8 +1,3 @@
-/**
- * Init command for amgr
- * Interactively creates a new .amgr/config.json
- */
-
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { checkbox, confirm, input } from '@inquirer/prompts';
@@ -13,22 +8,19 @@ import { createLogger } from '../lib/utils.js';
 import {
   parseSource,
   resolveSource,
+  resolveSources,
   getSourceDisplayName,
   getCombinedUseCases
 } from '../lib/sources.js';
+import { getGlobalSources, hasGlobalSources } from '../lib/global-config.js';
 
-/**
- * Prompt user to add sources interactively
- * @param {Object} logger - Logger instance
- * @returns {Promise<{sources: Array, resolvedSources: Array}>} Sources and their resolved versions
- */
 async function promptForSources(logger) {
   const sources = [];
   const resolvedSources = [];
-  
+
   while (true) {
     const sourceInput = await input({
-      message: sources.length === 0 
+      message: sources.length === 0
         ? 'Add a source (git URL or local path):'
         : 'Add another source (or leave empty to finish):',
       default: ''
@@ -45,11 +37,10 @@ async function promptForSources(logger) {
 
     try {
       const source = parseSource(sourceInput.trim());
-      
-      // Validate the source
+
       logger.info(`Validating source...`);
       const resolved = resolveSource(source, { logger });
-      
+
       sources.push(source);
       resolvedSources.push(resolved);
       logger.info(`  ✓ Added: ${getSourceDisplayName(resolved)}`);
@@ -82,22 +73,18 @@ function getUseCaseChoices(resolvedSources) {
   });
 }
 
-/**
- * Execute the init command
- */
 export async function init(options = {}) {
   const projectPath = process.cwd();
   const logger = createLogger(options.verbose);
 
   try {
-    // Check if config already exists
     if (configExists(projectPath, options.config)) {
       const configPath = getConfigPath(projectPath, options.config);
       const overwrite = await confirm({
         message: `Config already exists at ${configPath}. Overwrite?`,
         default: false
       });
-      
+
       if (!overwrite) {
         logger.info('Aborted. Existing config preserved.');
         return;
@@ -106,18 +93,72 @@ export async function init(options = {}) {
 
     logger.info('Setting up amgr configuration...\n');
 
-    logger.info('Sources define where your agent configurations come from.');
-    logger.info('Multiple sources are applied in order (later sources override earlier).\n');
-    
-    const { sources, resolvedSources } = await promptForSources(logger);
-    
-    logger.info(`\nConfigured ${sources.length} source(s):`);
-    for (let i = 0; i < resolvedSources.length; i++) {
-      logger.info(`  ${i + 1}. ${getSourceDisplayName(resolvedSources[i])}`);
-    }
-    logger.info('');
+    const globalSources = getGlobalSources();
+    let resolvedGlobalSources = [];
+    let projectSources = [];
+    let resolvedProjectSources = [];
 
-    // Select targets
+    if (globalSources.length > 0) {
+      logger.info('Global sources available:');
+      try {
+        resolvedGlobalSources = resolveSources(globalSources, { logger, skipFetch: true });
+        for (const source of resolvedGlobalSources) {
+          logger.info(`  ✓ ${getSourceDisplayName(source)}`);
+        }
+      } catch (e) {
+        logger.warn(`Could not resolve some global sources: ${e.message}`);
+      }
+      logger.info('');
+
+      const addProjectSources = await confirm({
+        message: 'Would you like to add project-specific sources?',
+        default: false
+      });
+
+      if (addProjectSources) {
+        logger.info('\nProject sources override global sources when files conflict.');
+        logger.info('Add sources in order of priority (later sources override earlier).\n');
+
+        const result = await promptForSources(logger);
+        projectSources = result.sources;
+        resolvedProjectSources = result.resolvedSources;
+      }
+    } else {
+      logger.info('No global sources configured.');
+      logger.info('Sources define where your agent configurations come from.');
+      logger.info('Multiple sources are applied in order (later sources override earlier).\n');
+      logger.info('Tip: Add a global source with "amgr source add <path> --global" to use it across all projects.\n');
+
+      const result = await promptForSources(logger);
+      projectSources = result.sources;
+      resolvedProjectSources = result.resolvedSources;
+    }
+
+    const allResolvedSources = [...resolvedGlobalSources, ...resolvedProjectSources];
+
+    if (allResolvedSources.length === 0) {
+      logger.error('No sources available. At least one source is required.');
+      logger.error('Add a global source: amgr source add <path> --global');
+      process.exit(1);
+    }
+
+    if (resolvedGlobalSources.length > 0 || resolvedProjectSources.length > 0) {
+      logger.info('\nSources that will be used:');
+      if (resolvedGlobalSources.length > 0) {
+        logger.info('  Global:');
+        for (const source of resolvedGlobalSources) {
+          logger.info(`    ${getSourceDisplayName(source)}`);
+        }
+      }
+      if (resolvedProjectSources.length > 0) {
+        logger.info('  Project:');
+        for (const source of resolvedProjectSources) {
+          logger.info(`    ${getSourceDisplayName(source)}`);
+        }
+      }
+      logger.info('');
+    }
+
     const targets = await checkbox({
       message: 'Select target AI tools:',
       choices: VALID_TARGETS.map(t => ({
@@ -133,7 +174,6 @@ export async function init(options = {}) {
       process.exit(1);
     }
 
-    // Select features
     const features = await checkbox({
       message: 'Select features to include:',
       choices: VALID_FEATURES.map(f => ({
@@ -149,8 +189,8 @@ export async function init(options = {}) {
       process.exit(1);
     }
 
-    const useCaseChoices = getUseCaseChoices(resolvedSources);
-    
+    const useCaseChoices = getUseCaseChoices(allResolvedSources);
+
     if (useCaseChoices.length === 0) {
       logger.error('No use-cases found in configured sources.');
       logger.error('Add use-cases to your source repos with "amgr repo add <name>".');
@@ -168,7 +208,6 @@ export async function init(options = {}) {
       process.exit(1);
     }
 
-    // Ask about advanced options
     const configureOptions = await confirm({
       message: 'Configure advanced options?',
       default: false
@@ -205,23 +244,24 @@ export async function init(options = {}) {
 
     const config = {
       "$schema": "https://raw.githubusercontent.com/oztamir/amgr/main/schemas/amgr.schema.json",
-      sources,
       targets,
       features,
       "use-cases": useCases
     };
 
+    if (projectSources.length > 0) {
+      config.sources = projectSources;
+    }
+
     if (Object.keys(configOptions).length > 0) {
       config.options = configOptions;
     }
 
-    // Create .amgr directory
     const amgrDir = join(projectPath, CONFIG_DIR);
     if (!existsSync(amgrDir)) {
       mkdirSync(amgrDir, { recursive: true });
     }
 
-    // Write config file
     const configPath = join(amgrDir, CONFIG_FILE);
     writeFileSync(configPath, JSON.stringify(config, null, 2) + '\n');
 
@@ -233,7 +273,6 @@ export async function init(options = {}) {
 
   } catch (e) {
     if (e.name === 'ExitPromptError') {
-      // User cancelled
       logger.info('\nAborted.');
       return;
     }

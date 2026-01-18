@@ -8,7 +8,8 @@ import { join, resolve, basename } from 'node:path';
 import { execSync } from 'node:child_process';
 import { homedir } from 'node:os';
 
-import { REPO_FILE } from './constants.js';
+import { REPO_FILE, GLOBAL_SOURCES_POSITION } from './constants.js';
+import { getEffectiveOptions } from './config.js';
 import { loadRepoConfig } from './repo-config.js';
 
 // Cache directory for git sources
@@ -383,7 +384,6 @@ export function validateSources(sources) {
     const source = sources[i];
     
     if (typeof source === 'string') {
-      // String sources are valid, will be parsed later
       continue;
     }
     
@@ -411,4 +411,20 @@ export function validateSources(sources) {
   }
   
   return errors;
+}
+
+export function getMergedSources(projectConfig, globalSources = []) {
+  const effectiveOptions = getEffectiveOptions(projectConfig);
+
+  if (effectiveOptions.ignoreGlobalSources) {
+    return projectConfig.sources || [];
+  }
+
+  const projectSources = projectConfig.sources || [];
+
+  if (effectiveOptions.globalSourcesPosition === GLOBAL_SOURCES_POSITION.APPEND) {
+    return [...projectSources, ...globalSources];
+  }
+
+  return [...globalSources, ...projectSources];
 }
