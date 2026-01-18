@@ -5,14 +5,15 @@ This guide covers how to use amgr to manage AI agent configurations across your 
 ## Installation
 
 ```bash
-# Clone the repository
-git clone https://github.com/oztamir/amgr.git
-
-# Install and link globally
-cd amgr
-npm install
-npm link
+npm install -g amgr
 ```
+
+Or with npx (no install required):
+```bash
+npx amgr init
+```
+
+See [npm package](https://www.npmjs.com/package/amgr) for more details.
 
 Verify installation:
 

@@ -10,7 +10,18 @@ This guide explains how to set up a development environment and contribute to am
 
 ## Getting Started
 
-### Clone and Install
+### For Users
+
+Install from npm:
+```bash
+npm install -g amgr
+```
+
+See [npm package](https://www.npmjs.com/package/amgr) for more details.
+
+### For Development
+
+Clone and install for local development:
 
 ```bash
 # Clone the repository

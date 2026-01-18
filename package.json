@@ -1,6 +1,6 @@
 {
   "name": "amgr",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "CLI tool for managing AI agent configurations across projects",
   "type": "module",
   "bin": {
@@ -28,6 +28,12 @@
   ],
   "author": "Oz Tamir",
   "license": "ISC",
+  "files": [
+    "dist"
+  ],
+  "engines": {
+    "node": ">=20.0.0"
+  },
   "dependencies": {
     "@inquirer/prompts": "^8.2.0",
     "commander": "^14.0.2",

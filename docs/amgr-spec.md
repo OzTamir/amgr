@@ -198,12 +198,15 @@ Advanced configuration options passed to rulesync.
 ### Installation
 
 ```bash
-# Install globally from the agents repository
-npm install -g /path/to/agents
-
-# Or link during development
-cd /path/to/agents && npm link
+npm install -g amgr
 ```
+
+Or with npx (no install required):
+```bash
+npx amgr init
+```
+
+See [npm package](https://www.npmjs.com/package/amgr) for more details.
 
 ### Commands
 

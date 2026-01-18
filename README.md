@@ -1,15 +1,18 @@
 # amgr - Agents Manager CLI
 
+[![npm version](https://img.shields.io/npm/v/amgr.svg)](https://www.npmjs.com/package/amgr)
+
 A CLI tool for managing AI agent configurations across projects. It composes configurations from the agents repository and deploys them to target project directories.
 
 ## Installation
 
 ```bash
-# Install globally from the agents repository
-npm install -g /path/to/agents
+npm install -g amgr
+```
 
-# Or link during development
-cd /path/to/agents && npm link
+Or with npx (no install required):
+```bash
+npx amgr init
 ```
 
 ## Quick Start
