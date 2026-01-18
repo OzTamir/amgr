@@ -1,10 +1,3 @@
-#!/usr/bin/env node
-
-/**
- * amgr - Agents Manager CLI
- * Manage AI agent configurations across projects
- */
-
 import { Command } from 'commander';
 import { readFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
@@ -17,11 +10,21 @@ import { validate } from './commands/validate.js';
 import { clean } from './commands/clean.js';
 import { detach } from './commands/detach.js';
 import { repoInit, repoAdd, repoRemove, repoList } from './commands/repo.js';
-import { sourceAdd, sourceRemove, sourceList, sourceUpdate } from './commands/source.js';
+import {
+  sourceAdd,
+  sourceRemove,
+  sourceList,
+  sourceUpdate,
+} from './commands/source.js';
 
-// Get package.json for version
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const packageJson = JSON.parse(readFileSync(join(__dirname, '..', 'package.json'), 'utf8'));
+
+interface PackageJson {
+  version: string;
+}
+
+const packageJsonPath = join(__dirname, '..', 'package.json');
+const packageJson = JSON.parse(readFileSync(packageJsonPath, 'utf8')) as PackageJson;
 
 const program = new Command();
 
@@ -38,7 +41,6 @@ program
   .option('-c, --config <path>', 'Use a custom config file path')
   .action(sync);
 
-// Init command
 program
   .command('init')
   .description('Initialize a new .amgr/config.json configuration file')
@@ -52,7 +54,6 @@ program
   .option('-v, --verbose', 'Show targets and features as well')
   .action(list);
 
-// Validate command
 program
   .command('validate')
   .description('Validate the .amgr/config.json configuration file')
@@ -60,7 +61,6 @@ program
   .option('-c, --config <path>', 'Use a custom config file path')
   .action(validate);
 
-// Clean command
 program
   .command('clean')
   .description('Remove all generated agent configuration files')
@@ -68,7 +68,6 @@ program
   .option('-v, --verbose', 'Enable verbose output')
   .action(clean);
 
-// Detach command
 program
   .command('detach')
   .description('Remove all amgr-created files and optionally the config')
@@ -76,10 +75,7 @@ program
   .option('-v, --verbose', 'Enable verbose output')
   .action(detach);
 
-// Repo command group
-const repoCommand = program
-  .command('repo')
-  .description('Manage amgr repositories');
+const repoCommand = program.command('repo').description('Manage amgr repositories');
 
 repoCommand
   .command('init')
@@ -110,7 +106,6 @@ repoCommand
   .option('-v, --verbose', 'Show additional details')
   .action(repoList);
 
-// Source command group
 const sourceCommand = program
   .command('source')
   .description('Manage rules sources for the project');
@@ -146,5 +141,4 @@ sourceCommand
   .option('-g, --global', 'Update only global sources')
   .action(sourceUpdate);
 
-// Parse arguments
 program.parse();
