@@ -1,0 +1,29 @@
+{
+  "name": "amgr",
+  "version": "1.0.0",
+  "description": "CLI tool for managing AI agent configurations across projects",
+  "type": "module",
+  "bin": {
+    "amgr": "./src/index.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/OzTamir/amgr.git"
+  },
+  "bugs": {
+    "url": "https://github.com/OzTamir/amgr/issues"
+  },
+  "homepage": "https://github.com/OzTamir/amgr#readme",
+  "keywords": [
+    "ai",
+    "agents",
+    "cli",
+    "configuration"
+  ],
+  "author": "Oz Tamir",
+  "license": "ISC",
+  "dependencies": {
+    "@inquirer/prompts": "^8.2.0",
+    "commander": "^14.0.2"
+  }
+}

@@ -1,0 +1,142 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://raw.githubusercontent.com/oztamir/amgr/main/schemas/amgr.schema.json",
+  "title": "amgr Configuration",
+  "description": "Configuration schema for amgr - AI agent configuration manager. Sources are required for sync operations.",
+  "type": "object",
+  "required": ["targets", "features"],
+  "properties": {
+    "$schema": {
+      "type": "string",
+      "description": "JSON Schema reference for IDE validation"
+    },
+    "sources": {
+      "type": "array",
+      "description": "Rules sources (git URLs or local paths). Required for sync operations. Sources are applied in order - later sources override earlier ones.",
+      "items": {
+        "oneOf": [
+          {
+            "type": "string",
+            "description": "Git URL or local path (type auto-detected)"
+          },
+          {
+            "type": "object",
+            "description": "Git source",
+            "required": ["type", "url"],
+            "properties": {
+              "type": {
+                "const": "git",
+                "description": "Source type"
+              },
+              "url": {
+                "type": "string",
+                "description": "Git repository URL"
+              },
+              "name": {
+                "type": "string",
+                "description": "Optional display name for the source"
+              }
+            },
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "description": "Local source",
+            "required": ["type", "path"],
+            "properties": {
+              "type": {
+                "const": "local",
+                "description": "Source type"
+              },
+              "path": {
+                "type": "string",
+                "description": "Local file system path (supports ~ for home directory)"
+              },
+              "name": {
+                "type": "string",
+                "description": "Optional display name for the source"
+              }
+            },
+            "additionalProperties": false
+          }
+        ]
+      },
+      "examples": [
+        [
+          { "type": "git", "url": "https://github.com/company/agent-rules" },
+          { "type": "local", "path": "~/my-personal-agents" }
+        ],
+        [
+          "https://github.com/company/agent-rules",
+          "~/my-agents"
+        ]
+      ]
+    },
+    "targets": {
+      "type": "array",
+      "description": "AI tools to generate configurations for",
+      "items": {
+        "type": "string",
+        "enum": ["*", "claudecode", "cursor", "copilot", "geminicli", "cline", "codex", "opencode"]
+      },
+      "minItems": 1,
+      "examples": [
+        ["claudecode", "cursor"],
+        ["*"]
+      ]
+    },
+    "features": {
+      "type": "array",
+      "description": "Content types to include in the generated configuration",
+      "items": {
+        "type": "string",
+        "enum": ["rules", "ignore", "mcp", "commands", "subagents", "skills"]
+      },
+      "minItems": 1,
+      "examples": [
+        ["rules", "commands", "skills"],
+        ["rules", "ignore", "mcp", "commands", "subagents", "skills"]
+      ]
+    },
+    "use-cases": {
+      "type": "array",
+      "description": "Use-case identifiers from configured sources. Required for sync operations.",
+      "items": {
+        "type": "string"
+      },
+      "examples": [
+        ["development"],
+        ["development", "writing"],
+        ["development", "my-custom-usecase"]
+      ]
+    },
+    "options": {
+      "type": "object",
+      "description": "Advanced configuration options",
+      "properties": {
+        "simulateCommands": {
+          "type": "boolean",
+          "default": false,
+          "description": "Generate simulated commands for tools without native support"
+        },
+        "simulateSubagents": {
+          "type": "boolean",
+          "default": false,
+          "description": "Generate simulated subagents for tools without native support"
+        },
+        "simulateSkills": {
+          "type": "boolean",
+          "default": false,
+          "description": "Generate simulated skills for tools without native support"
+        },
+        "modularMcp": {
+          "type": "boolean",
+          "default": false,
+          "description": "Enable modular-mcp for Claude Code (reduces token usage)"
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}
