@@ -16,3 +16,11 @@ dist/
 
 # tmp
 tmp/
+
+# rulesync
+.opencode/
+.cursor/
+.claude/
+.codex/
+AGENTS.md
+.amgr/

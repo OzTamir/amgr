@@ -77,7 +77,7 @@
       "description": "AI tools to generate configurations for",
       "items": {
         "type": "string",
-        "enum": ["*", "claudecode", "cursor", "copilot", "geminicli", "cline", "codex", "opencode"]
+        "enum": ["*", "agentsmd", "antigravity", "augmentcode", "augmentcode-legacy", "claudecode", "claudecode-legacy", "cline", "codexcli", "copilot", "cursor", "geminicli", "junie", "kilo", "kiro", "opencode", "qwencode", "roo", "warp", "windsurf", "zed"]
       },
       "minItems": 1,
       "examples": [

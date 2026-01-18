@@ -1,13 +1,26 @@
 import type { Source } from './sources.js';
 
 export const VALID_TARGETS = [
+  'agentsmd',
+  'antigravity',
+  'augmentcode',
+  'augmentcode-legacy',
   'claudecode',
-  'cursor',
-  'copilot',
-  'geminicli',
+  'claudecode-legacy',
   'cline',
-  'codex',
+  'codexcli',
+  'copilot',
+  'cursor',
+  'geminicli',
+  'junie',
+  'kilo',
+  'kiro',
   'opencode',
+  'qwencode',
+  'roo',
+  'warp',
+  'windsurf',
+  'zed',
 ] as const;
 
 export type Target = (typeof VALID_TARGETS)[number];

@@ -330,13 +330,26 @@ AI tools to generate configurations for:
 
 | Target | Description |
 |--------|-------------|
+| `agentsmd` | AGENTS.md (generic) |
+| `antigravity` | Antigravity AI |
+| `augmentcode` | Augment Code |
+| `augmentcode-legacy` | Augment Code (legacy) |
 | `claudecode` | Claude Code (Anthropic's CLI) |
-| `cursor` | Cursor IDE |
-| `copilot` | GitHub Copilot |
-| `geminicli` | Gemini CLI |
+| `claudecode-legacy` | Claude Code (legacy) |
 | `cline` | Cline VS Code extension |
-| `codex` | OpenAI Codex CLI |
+| `codexcli` | OpenAI Codex CLI |
+| `copilot` | GitHub Copilot |
+| `cursor` | Cursor IDE |
+| `geminicli` | Gemini CLI |
+| `junie` | JetBrains Junie |
+| `kilo` | Kilo Code |
+| `kiro` | Kiro AI |
 | `opencode` | OpenCode |
+| `qwencode` | Qwen Code |
+| `roo` | Roo Code |
+| `warp` | Warp Terminal |
+| `windsurf` | Windsurf IDE |
+| `zed` | Zed Editor |
 
 Use `"*"` to generate for all supported tools.
 
