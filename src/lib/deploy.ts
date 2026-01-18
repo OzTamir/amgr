@@ -10,11 +10,22 @@ interface TargetDir {
   fullPath: string;
 }
 
-export function getGeneratedTargetDirs(generatedPath: string): TargetDir[] {
+export function getGeneratedTargetDirs(
+  generatedPath: string,
+  configuredTargets?: Target[]
+): TargetDir[] {
   const dirs: TargetDir[] = [];
+  const seenDirs = new Set<string>();
+
   for (const [target, dir] of Object.entries(TARGET_DIRECTORIES)) {
+    // Skip targets not in the configured list (if provided)
+    if (configuredTargets && !configuredTargets.includes(target as Target)) {
+      continue;
+    }
+
     const fullPath = join(generatedPath, dir);
-    if (existsSync(fullPath)) {
+    if (existsSync(fullPath) && !seenDirs.has(dir)) {
+      seenDirs.add(dir);
       dirs.push({ target: target as Target, dir, fullPath });
     }
   }
@@ -56,6 +67,7 @@ interface DeployResult {
 interface DeployOptions {
   generatedPath: string;
   projectPath: string;
+  targets?: Target[];
   trackedFiles?: string[];
   dryRun?: boolean;
   logger?: Logger;
@@ -65,6 +77,7 @@ export function deploy(options: DeployOptions): DeployResult {
   const {
     generatedPath,
     projectPath,
+    targets,
     trackedFiles = [],
     dryRun = false,
     logger,
@@ -74,7 +87,7 @@ export function deploy(options: DeployOptions): DeployResult {
   const skipped: string[] = [];
   const conflicts: Conflict[] = [];
 
-  const targetDirs = getGeneratedTargetDirs(generatedPath);
+  const targetDirs = getGeneratedTargetDirs(generatedPath, targets);
 
   for (const { dir, fullPath: sourceDirPath } of targetDirs) {
     const destDirPath = join(projectPath, dir);
@@ -123,9 +136,12 @@ export function deploy(options: DeployOptions): DeployResult {
   return { deployed, skipped, conflicts };
 }
 
-export function getFilesToDeploy(generatedPath: string): string[] {
+export function getFilesToDeploy(
+  generatedPath: string,
+  targets?: Target[]
+): string[] {
   const files: string[] = [];
-  const targetDirs = getGeneratedTargetDirs(generatedPath);
+  const targetDirs = getGeneratedTargetDirs(generatedPath, targets);
 
   for (const { dir, fullPath: sourceDirPath } of targetDirs) {
     const dirFiles = getAllFiles(sourceDirPath);
@@ -140,10 +156,11 @@ export function getFilesToDeploy(generatedPath: string): string[] {
 export function checkConflicts(
   generatedPath: string,
   projectPath: string,
-  trackedFiles: string[]
+  trackedFiles: string[],
+  targets?: Target[]
 ): string[] {
   const conflicts: string[] = [];
-  const filesToDeploy = getFilesToDeploy(generatedPath);
+  const filesToDeploy = getFilesToDeploy(generatedPath, targets);
 
   for (const file of filesToDeploy) {
     const destPath = join(projectPath, file);

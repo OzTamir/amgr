@@ -1,4 +1,0 @@
-# Shared ignore patterns
-node_modules/
-.git/
-*.log

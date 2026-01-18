@@ -48,12 +48,13 @@ export function writeLockFile(projectPath: string, files: string[]): void {
   }
 
   const existingLock = readLockFile(projectPath);
+  const uniqueFiles = [...new Set(files)].sort();
 
   const lock: LockFile = {
     version: LOCK_VERSION,
     created: existingLock?.created ?? new Date().toISOString(),
     lastSynced: new Date().toISOString(),
-    files: [...files].sort(),
+    files: uniqueFiles,
   };
 
   writeFileSync(lockPath, JSON.stringify(lock, null, 2) + '\n');

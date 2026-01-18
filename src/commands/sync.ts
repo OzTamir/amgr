@@ -130,6 +130,7 @@ export async function sync(options: CommandOptions = {}): Promise<void> {
       const { deployed, skipped, conflicts } = deploy({
         generatedPath: tempDir,
         projectPath,
+        targets,
         trackedFiles,
         dryRun,
         logger,
