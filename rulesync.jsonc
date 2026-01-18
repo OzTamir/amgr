@@ -1,0 +1,23 @@
+{
+  "$schema": "https://raw.githubusercontent.com/dyoshikawa/rulesync/refs/heads/main/config-schema.json",
+  "targets": [
+    "claudecode",
+    "cursor",
+    "codexcli",
+    "opencode"
+  ],
+  "features": [
+    "rules",
+    "commands",
+    "subagents",
+    "skills"
+  ],
+  "baseDirs": [
+    "."
+  ],
+  "delete": true,
+  "simulateCommands": true,
+  "simulateSubagents": true,
+  "simulateSkills": true,
+  "modularMcp": true
+}
