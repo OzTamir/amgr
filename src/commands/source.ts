@@ -1,13 +1,6 @@
 import { confirm } from '@inquirer/prompts';
 
-import { CONFIG_DIR } from '../lib/constants.js';
-import {
-  configExists,
-  loadConfig,
-  saveConfig,
-  addSourceToConfig,
-  removeSourceFromConfig
-} from '../lib/config.js';
+import { configExists, loadConfig, saveConfig, addSourceToConfig, removeSourceFromConfig } from '../lib/config.js';
 import {
   parseSource,
   resolveSource,
@@ -16,35 +9,46 @@ import {
   getCombinedUseCases,
   getGitCacheLastModified,
   formatRelativeTime,
+  expandPath,
   SOURCE_TYPES,
-  expandPath
 } from '../lib/sources.js';
 import {
   getGlobalSources,
   addGlobalSource,
   removeGlobalSource,
-  getGlobalConfigPath
+  getGlobalConfigPath,
 } from '../lib/global-config.js';
 import { createLogger } from '../lib/utils.js';
+import type { CommandOptions } from '../types/common.js';
+import type { Source, SourceObject, GitSource, LocalSource, ResolvedSource } from '../types/sources.js';
 
-export async function sourceAdd(sourceInput, options = {}) {
+interface SourceAddOptions extends CommandOptions {
+  position?: string;
+  name?: string;
+}
+
+export async function sourceAdd(
+  sourceInput: string,
+  options: SourceAddOptions = {}
+): Promise<void> {
   const projectPath = process.cwd();
   const logger = createLogger(options.verbose);
-  const isGlobal = options.global;
+  const isGlobal = options.global ?? false;
 
   try {
     if (!isGlobal && !configExists(projectPath)) {
       throw new Error(
-        'No .amgr/config.json found in current directory.\n' +
-        'Run \'amgr init\' to create one first, or use --global to add a global source.'
+        "No .amgr/config.json found in current directory.\n" +
+          "Run 'amgr init' to create one first, or use --global to add a global source."
       );
     }
 
-    let source;
+    let source: SourceObject;
     try {
       source = parseSource(sourceInput);
     } catch (e) {
-      throw new Error(`Invalid source: ${e.message}`);
+      const message = e instanceof Error ? e.message : String(e);
+      throw new Error(`Invalid source: ${message}`);
     }
 
     if (options.name) {
@@ -58,10 +62,12 @@ export async function sourceAdd(sourceInput, options = {}) {
       const resolved = resolveSource(source, { logger, skipFetch: false });
       logger.verbose(`Resolved to: ${resolved.localPath}`);
     } catch (e) {
-      throw new Error(`Source validation failed: ${e.message}`);
+      const message = e instanceof Error ? e.message : String(e);
+      throw new Error(`Source validation failed: ${message}`);
     }
 
-    const position = options.position !== undefined ? parseInt(options.position, 10) : undefined;
+    const position =
+      options.position !== undefined ? parseInt(options.position, 10) : undefined;
 
     if (isGlobal) {
       addGlobalSource(source, position);
@@ -72,14 +78,14 @@ export async function sourceAdd(sourceInput, options = {}) {
     } else {
       const config = loadConfig(projectPath);
 
-      const existingSources = config.sources || [];
-      const isDuplicate = existingSources.some(s => {
+      const existingSources = config.sources ?? [];
+      const isDuplicate = existingSources.some((s) => {
         const parsed = parseSource(s);
         if (source.type === SOURCE_TYPES.GIT && parsed.type === SOURCE_TYPES.GIT) {
-          return source.url === parsed.url;
+          return (source as GitSource).url === (parsed as GitSource).url;
         }
         if (source.type === SOURCE_TYPES.LOCAL && parsed.type === SOURCE_TYPES.LOCAL) {
-          return expandPath(source.path) === expandPath(parsed.path);
+          return expandPath((source as LocalSource).path) === expandPath((parsed as LocalSource).path);
         }
         return false;
       });
@@ -88,7 +94,7 @@ export async function sourceAdd(sourceInput, options = {}) {
         throw new Error('This source is already configured');
       }
 
-      const updatedConfig = addSourceToConfig(config, source, position);
+      const updatedConfig = addSourceToConfig(config, source as Source, position);
       saveConfig(projectPath, updatedConfig);
 
       const displayName = getSourceDisplayName(source);
@@ -104,27 +110,33 @@ export async function sourceAdd(sourceInput, options = {}) {
       const displayName = getSourceDisplayName(source);
       logger.info(`\nAvailable use-cases from ${displayName}:`);
       for (const name of useCaseNames) {
-        logger.info(`  ${name} - ${useCases[name].description}`);
+        const useCase = useCases[name];
+        if (useCase) {
+          logger.info(`  ${name} - ${useCase.description}`);
+        }
       }
       if (!isGlobal) {
-        logger.info('\nRun \'amgr sync\' to apply changes.');
+        logger.info("\nRun 'amgr sync' to apply changes.");
       }
     }
-
   } catch (e) {
-    if (e.name === 'ExitPromptError') {
+    if (e instanceof Error && e.name === 'ExitPromptError') {
       logger.info('\nAborted.');
       return;
     }
-    logger.error(e.message);
+    const message = e instanceof Error ? e.message : String(e);
+    logger.error(message);
     process.exit(1);
   }
 }
 
-export async function sourceRemove(indexOrName, options = {}) {
+export async function sourceRemove(
+  indexOrName: string,
+  options: CommandOptions = {}
+): Promise<void> {
   const projectPath = process.cwd();
   const logger = createLogger(options.verbose);
-  const isGlobal = options.global;
+  const isGlobal = options.global ?? false;
 
   try {
     if (isGlobal) {
@@ -133,18 +145,27 @@ export async function sourceRemove(indexOrName, options = {}) {
         throw new Error('No global sources configured');
       }
 
-      let sourceToRemove;
+      let sourceToRemove: SourceObject;
       const parsedIndex = parseInt(indexOrName, 10);
 
       if (!isNaN(parsedIndex)) {
         if (parsedIndex < 0 || parsedIndex >= globalSources.length) {
-          throw new Error(`Invalid source index: ${parsedIndex}. Valid range: 0-${globalSources.length - 1}`);
+          throw new Error(
+            `Invalid source index: ${parsedIndex}. Valid range: 0-${globalSources.length - 1}`
+          );
         }
-        sourceToRemove = parseSource(globalSources[parsedIndex]);
+        const source = globalSources[parsedIndex];
+        if (!source) {
+          throw new Error(`Source at index ${parsedIndex} not found`);
+        }
+        sourceToRemove = parseSource(source);
       } else {
-        const found = globalSources.find(s => {
+        const found = globalSources.find((s) => {
           const parsed = parseSource(s);
-          return parsed.name === indexOrName || getSourceDisplayName(parsed) === indexOrName;
+          return (
+            parsed.name === indexOrName ||
+            getSourceDisplayName(parsed) === indexOrName
+          );
         });
         if (!found) {
           throw new Error(`Global source not found: ${indexOrName}`);
@@ -157,7 +178,7 @@ export async function sourceRemove(indexOrName, options = {}) {
       if (!options.force) {
         const confirmRemove = await confirm({
           message: `Remove global source "${displayName}"?`,
-          default: false
+          default: false,
         });
 
         if (!confirmRemove) {
@@ -168,12 +189,11 @@ export async function sourceRemove(indexOrName, options = {}) {
 
       removeGlobalSource(indexOrName);
       logger.success(`Removed global source: ${displayName}`);
-
     } else {
       if (!configExists(projectPath)) {
         throw new Error(
-          'No .amgr/config.json found in current directory.\n' +
-          'Run \'amgr init\' to create one first.'
+          "No .amgr/config.json found in current directory.\n" +
+            "Run 'amgr init' to create one first."
         );
       }
 
@@ -183,18 +203,23 @@ export async function sourceRemove(indexOrName, options = {}) {
         throw new Error('No project sources configured');
       }
 
-      let index;
+      let index: number;
       const parsedIndex = parseInt(indexOrName, 10);
 
       if (!isNaN(parsedIndex)) {
         index = parsedIndex;
         if (index < 0 || index >= config.sources.length) {
-          throw new Error(`Invalid source index: ${index}. Valid range: 0-${config.sources.length - 1}`);
+          throw new Error(
+            `Invalid source index: ${index}. Valid range: 0-${config.sources.length - 1}`
+          );
         }
       } else {
-        index = config.sources.findIndex(s => {
+        index = config.sources.findIndex((s) => {
           const parsed = parseSource(s);
-          return parsed.name === indexOrName || getSourceDisplayName(parsed) === indexOrName;
+          return (
+            parsed.name === indexOrName ||
+            getSourceDisplayName(parsed) === indexOrName
+          );
         });
 
         if (index === -1) {
@@ -202,13 +227,17 @@ export async function sourceRemove(indexOrName, options = {}) {
         }
       }
 
-      const sourceToRemove = parseSource(config.sources[index]);
+      const sourceAtIndex = config.sources[index];
+      if (!sourceAtIndex) {
+        throw new Error(`Source at index ${index} not found`);
+      }
+      const sourceToRemove = parseSource(sourceAtIndex);
       const displayName = getSourceDisplayName(sourceToRemove);
 
       if (!options.force) {
         const confirmRemove = await confirm({
           message: `Remove source "${displayName}"?`,
-          default: false
+          default: false,
         });
 
         if (!confirmRemove) {
@@ -221,39 +250,46 @@ export async function sourceRemove(indexOrName, options = {}) {
       saveConfig(projectPath, updatedConfig);
 
       logger.success(`Removed source: ${displayName}`);
-      logger.info('\nRun \'amgr sync\' to apply changes.');
+      logger.info("\nRun 'amgr sync' to apply changes.");
     }
-
   } catch (e) {
-    if (e.name === 'ExitPromptError') {
+    if (e instanceof Error && e.name === 'ExitPromptError') {
       logger.info('\nAborted.');
       return;
     }
-    logger.error(e.message);
+    const message = e instanceof Error ? e.message : String(e);
+    logger.error(message);
     process.exit(1);
   }
 }
 
-function printSourcesList(sources, label, startIndex, options, resolvedSources) {
-  const logger = createLogger(options.verbose);
-  
+function printSourcesList(
+  sources: Source[],
+  label: string,
+  startIndex: number,
+  options: CommandOptions,
+  resolvedSources: ResolvedSource[]
+): number {
   if (sources.length === 0) return startIndex;
 
   console.log(`\n${label}:`);
 
   for (let i = 0; i < sources.length; i++) {
-    const source = parseSource(sources[i]);
+    const sourceItem = sources[i];
+    if (!sourceItem) continue;
+    
+    const source = parseSource(sourceItem);
     const displayName = getSourceDisplayName(source);
 
     let status = '';
-    let resolved = null;
+    let resolved: ResolvedSource | null = null;
 
     try {
       resolved = resolveSource(source, { skipFetch: true });
       resolvedSources.push(resolved);
 
       if (source.type === SOURCE_TYPES.GIT) {
-        const lastModified = getGitCacheLastModified(source.url);
+        const lastModified = getGitCacheLastModified((source as GitSource).url);
         if (lastModified) {
           status = `(cached, updated ${formatRelativeTime(lastModified)})`;
         } else {
@@ -266,12 +302,16 @@ function printSourcesList(sources, label, startIndex, options, resolvedSources) 
       if (source.type === SOURCE_TYPES.GIT) {
         status = '(not cached)';
       } else {
-        status = `(error: ${e.message})`;
+        const message = e instanceof Error ? e.message : String(e);
+        status = `(error: ${message})`;
       }
     }
 
     const typeLabel = source.type === SOURCE_TYPES.GIT ? 'git' : 'local';
-    const locationLabel = source.type === SOURCE_TYPES.GIT ? source.url : source.path;
+    const locationLabel =
+      source.type === SOURCE_TYPES.GIT
+        ? (source as GitSource).url
+        : (source as LocalSource).path;
 
     console.log(`  ${startIndex + i}. ${typeLabel}: ${displayName} ${status}`);
     if (options.verbose) {
@@ -282,25 +322,29 @@ function printSourcesList(sources, label, startIndex, options, resolvedSources) 
   return startIndex + sources.length;
 }
 
-export async function sourceList(options = {}) {
+export async function sourceList(options: CommandOptions = {}): Promise<void> {
   const projectPath = process.cwd();
   const logger = createLogger(options.verbose);
-  const isGlobal = options.global;
+  const isGlobal = options.global ?? false;
 
   try {
     const globalSources = getGlobalSources();
     const hasProjectConfig = configExists(projectPath);
-    const projectSources = hasProjectConfig ? (loadConfig(projectPath).sources || []) : [];
+    const projectSources = hasProjectConfig
+      ? (loadConfig(projectPath).sources ?? [])
+      : [];
 
     if (isGlobal) {
       if (globalSources.length === 0) {
         console.log('\nNo global sources configured.');
         console.log(`Global config: ${getGlobalConfigPath()}`);
-        console.log('\nRun \'amgr source add <url-or-path> --global\' to add a global source.');
+        console.log(
+          "\nRun 'amgr source add <url-or-path> --global' to add a global source."
+        );
         return;
       }
 
-      const resolvedSources = [];
+      const resolvedSources: ResolvedSource[] = [];
       printSourcesList(globalSources, 'Global sources', 0, options, resolvedSources);
 
       if (resolvedSources.length > 0) {
@@ -310,8 +354,10 @@ export async function sourceList(options = {}) {
         if (useCaseNames.length > 0) {
           console.log('\nAvailable use-cases:');
           for (const name of useCaseNames.sort()) {
-            const { description } = combinedUseCases[name];
-            console.log(`  ${name.padEnd(20)} - ${description}`);
+            const useCase = combinedUseCases[name];
+            if (useCase) {
+              console.log(`  ${name.padEnd(20)} - ${useCase.description}`);
+            }
           }
         }
       }
@@ -326,20 +372,32 @@ export async function sourceList(options = {}) {
       if (hasProjectConfig) {
         console.log('Add a project source: amgr source add <url-or-path>');
       } else {
-        console.log('Or run \'amgr init\' to set up a project.');
+        console.log("Or run 'amgr init' to set up a project.");
       }
       return;
     }
 
-    const resolvedSources = [];
+    const resolvedSources: ResolvedSource[] = [];
     let nextIndex = 0;
 
     if (globalSources.length > 0) {
-      nextIndex = printSourcesList(globalSources, 'Global sources', nextIndex, options, resolvedSources);
+      nextIndex = printSourcesList(
+        globalSources,
+        'Global sources',
+        nextIndex,
+        options,
+        resolvedSources
+      );
     }
 
     if (projectSources.length > 0) {
-      printSourcesList(projectSources, 'Project sources', 0, options, resolvedSources);
+      printSourcesList(
+        projectSources,
+        'Project sources',
+        0,
+        options,
+        resolvedSources
+      );
     }
 
     if (resolvedSources.length > 0) {
@@ -349,34 +407,39 @@ export async function sourceList(options = {}) {
       if (useCaseNames.length > 0) {
         console.log('\nAvailable use-cases:');
         for (const name of useCaseNames.sort()) {
-          const { description, sources: ucSources } = combinedUseCases[name];
-          const sourceLabel = ucSources.length > 1
-            ? ` (${ucSources.join(', ')})`
-            : ` (${ucSources[0]})`;
+          const useCase = combinedUseCases[name];
+          if (!useCase) continue;
+          const { description, sources: ucSources } = useCase;
+          const sourceLabel =
+            ucSources.length > 1
+              ? ` (${ucSources.join(', ')})`
+              : ` (${ucSources[0]})`;
           console.log(`  ${name.padEnd(20)} - ${description}${sourceLabel}`);
         }
       }
     }
 
     console.log('');
-
   } catch (e) {
-    logger.error(e.message);
+    const message = e instanceof Error ? e.message : String(e);
+    logger.error(message);
     process.exit(1);
   }
 }
 
-export async function sourceUpdate(options = {}) {
+export async function sourceUpdate(options: CommandOptions = {}): Promise<void> {
   const projectPath = process.cwd();
   const logger = createLogger(options.verbose);
-  const isGlobal = options.global;
+  const isGlobal = options.global ?? false;
 
   try {
     const globalSources = getGlobalSources();
     const hasProjectConfig = configExists(projectPath);
-    const projectSources = hasProjectConfig ? (loadConfig(projectPath).sources || []) : [];
+    const projectSources = hasProjectConfig
+      ? (loadConfig(projectPath).sources ?? [])
+      : [];
 
-    let sourcesToUpdate = [];
+    let sourcesToUpdate: Source[] = [];
 
     if (isGlobal) {
       sourcesToUpdate = globalSources;
@@ -414,7 +477,8 @@ export async function sourceUpdate(options = {}) {
           localCount++;
         }
       } catch (e) {
-        logger.warn(`  ✗ ${displayName}: ${e.message}`);
+        const message = e instanceof Error ? e.message : String(e);
+        logger.warn(`  ✗ ${displayName}: ${message}`);
         errorCount++;
       }
     }
@@ -429,9 +493,9 @@ export async function sourceUpdate(options = {}) {
     if (errorCount > 0) {
       logger.warn(`${errorCount} source(s) had errors`);
     }
-
   } catch (e) {
-    logger.error(e.message);
+    const message = e instanceof Error ? e.message : String(e);
+    logger.error(message);
     process.exit(1);
   }
 }

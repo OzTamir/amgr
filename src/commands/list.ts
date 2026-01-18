@@ -1,36 +1,43 @@
-import { VALID_TARGETS, TARGET_DESCRIPTIONS, VALID_FEATURES, FEATURE_DESCRIPTIONS } from '../lib/constants.js';
+import {
+  VALID_TARGETS,
+  TARGET_DESCRIPTIONS,
+  VALID_FEATURES,
+  FEATURE_DESCRIPTIONS,
+} from '../lib/constants.js';
 import { createLogger } from '../lib/utils.js';
-import { configExists, loadConfig, hasSources } from '../lib/config.js';
+import { configExists, loadConfig } from '../lib/config.js';
 import {
   resolveSources,
   getCombinedUseCases,
   getSourceDisplayName,
   getMergedSources,
-  parseSource,
-  SOURCE_TYPES
+  SOURCE_TYPES,
 } from '../lib/sources.js';
-import { getGlobalSources, hasGlobalSources } from '../lib/global-config.js';
+import { getGlobalSources } from '../lib/global-config.js';
+import type { CommandOptions } from '../types/common.js';
+import type { Source, ResolvedSource } from '../types/sources.js';
 
-export async function list(options = {}) {
+export async function list(options: CommandOptions = {}): Promise<void> {
   const projectPath = process.cwd();
   const logger = createLogger(options.verbose);
 
   const globalSources = getGlobalSources();
   const hasProjectConfig = configExists(projectPath);
   let config = null;
-  let projectSources = [];
+  let projectSources: Source[] = [];
 
   if (hasProjectConfig) {
     try {
       config = loadConfig(projectPath);
-      projectSources = config.sources || [];
+      projectSources = config.sources ?? [];
     } catch (e) {
-      logger.error(e.message);
+      const message = e instanceof Error ? e.message : String(e);
+      logger.error(message);
       process.exit(1);
     }
   }
 
-  const mergedSources = config 
+  const mergedSources = config
     ? getMergedSources(config, globalSources)
     : globalSources;
 
@@ -47,14 +54,15 @@ export async function list(options = {}) {
     return;
   }
 
-  let resolvedGlobal = [];
-  let resolvedProject = [];
+  let resolvedGlobal: ResolvedSource[] = [];
+  let resolvedProject: ResolvedSource[] = [];
 
   if (globalSources.length > 0) {
     try {
       resolvedGlobal = resolveSources(globalSources, { logger, skipFetch: true });
     } catch (e) {
-      logger.warn(`Could not resolve some global sources: ${e.message}`);
+      const message = e instanceof Error ? e.message : String(e);
+      logger.warn(`Could not resolve some global sources: ${message}`);
     }
   }
 
@@ -62,7 +70,8 @@ export async function list(options = {}) {
     try {
       resolvedProject = resolveSources(projectSources, { logger, skipFetch: true });
     } catch (e) {
-      logger.warn(`Could not resolve some project sources: ${e.message}`);
+      const message = e instanceof Error ? e.message : String(e);
+      logger.warn(`Could not resolve some project sources: ${message}`);
     }
   }
 
@@ -89,18 +98,21 @@ export async function list(options = {}) {
   console.log('\nAvailable use-cases:');
   if (useCaseNames.length === 0) {
     console.log('  (none)');
-    console.log('\n  Run "amgr repo add <name>" in your source repo to add use-cases.');
+    console.log(
+      '\n  Run "amgr repo add <name>" in your source repo to add use-cases.'
+    );
   } else {
     for (const name of useCaseNames) {
-      const { description, sources } = combinedUseCases[name];
-      const sourceLabel = sources.length > 1
-        ? ` (${sources.join(', ')})`
-        : ` (${sources[0]})`;
+      const useCaseData = combinedUseCases[name];
+      if (!useCaseData) continue;
+      const { description, sources } = useCaseData;
+      const sourceLabel =
+        sources.length > 1 ? ` (${sources.join(', ')})` : ` (${sources[0]})`;
       console.log(`  ${name.padEnd(20)} - ${description}${sourceLabel}`);
     }
   }
 
-  if (config && config['use-cases'] && config['use-cases'].length > 0) {
+  if (config?.['use-cases'] && config['use-cases'].length > 0) {
     console.log(`\nCurrently selected: ${config['use-cases'].join(', ')}`);
   }
 

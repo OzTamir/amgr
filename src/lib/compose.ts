@@ -1,38 +1,35 @@
-/**
- * Content composition for amgr
- * Composes shared content and use-case specific content into a rulesync directory
- * Supports multiple sources with layering (later sources override earlier ones)
- */
-
-import { existsSync, readdirSync, cpSync, rmSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import {
+  existsSync,
+  readdirSync,
+  cpSync,
+  rmSync,
+  mkdirSync,
+  writeFileSync,
+} from 'node:fs';
 import { join, basename } from 'node:path';
-import { ENTITY_TYPES } from './constants.js';
+import { ENTITY_TYPES, type EntityType } from './constants.js';
 import { shouldIncludeForUseCases, readJsoncFile } from './utils.js';
+import type { ResolvedSource } from '../types/sources.js';
+import type { ConfigOptions, Target, Feature } from '../types/config.js';
+import type { Logger } from '../types/common.js';
 
-/**
- * Get available use-cases from the agents repository
- */
-export function getAvailableUseCases(agentsPath) {
+export function getAvailableUseCases(agentsPath: string): string[] {
   const useCasesDir = join(agentsPath, 'use-cases');
   if (!existsSync(useCasesDir)) return [];
   return readdirSync(useCasesDir, { withFileTypes: true })
-    .filter(d => d.isDirectory())
-    .map(d => d.name);
+    .filter((d) => d.isDirectory())
+    .map((d) => d.name);
 }
 
-/**
- * Get available use-cases from multiple source paths
- * Returns combined use-cases with source attribution
- * @param {Array} sourcePaths - Array of source paths
- * @returns {Object} Object with use-case names as keys and { sources: [] } as values
- */
-export function getAvailableUseCasesFromSources(sourcePaths) {
-  const combined = {};
-  
+export function getAvailableUseCasesFromSources(
+  sourcePaths: string[]
+): Record<string, { sources: string[] }> {
+  const combined: Record<string, { sources: string[] }> = {};
+
   for (const sourcePath of sourcePaths) {
     const useCases = getAvailableUseCases(sourcePath);
     const sourceName = basename(sourcePath);
-    
+
     for (const useCase of useCases) {
       if (!combined[useCase]) {
         combined[useCase] = { sources: [] };
@@ -40,26 +37,23 @@ export function getAvailableUseCasesFromSources(sourcePaths) {
       combined[useCase].sources.push(sourceName);
     }
   }
-  
+
   return combined;
 }
 
-/**
- * Copy a directory recursively
- */
-function copyDir(src, dest) {
+function copyDir(src: string, dest: string): void {
   if (!existsSync(src)) return;
   cpSync(src, dest, { recursive: true });
 }
 
-/**
- * Copy shared entity directory with use-cases filtering
- * - For rules/commands: filter .md files by frontmatter use-cases
- * - For skills: filter directories by SKILL.md frontmatter use-cases
- */
-function copySharedEntityDir(srcDir, destDir, entityType, targetUseCases) {
+function copySharedEntityDir(
+  srcDir: string,
+  destDir: string,
+  entityType: EntityType,
+  targetUseCases: string[]
+): void {
   if (!existsSync(srcDir)) return;
-  
+
   const entries = readdirSync(srcDir, { withFileTypes: true });
 
   for (const entry of entries) {
@@ -67,7 +61,6 @@ function copySharedEntityDir(srcDir, destDir, entityType, targetUseCases) {
     const destPath = join(destDir, entry.name);
 
     if (entityType === 'skills') {
-      // Skills are directories - check SKILL.md for filtering
       if (entry.isDirectory()) {
         const skillMdPath = join(srcPath, 'SKILL.md');
         if (existsSync(skillMdPath)) {
@@ -76,49 +69,37 @@ function copySharedEntityDir(srcDir, destDir, entityType, targetUseCases) {
             cpSync(srcPath, destPath, { recursive: true });
           }
         } else {
-          // No SKILL.md, copy anyway
           mkdirSync(destPath, { recursive: true });
           cpSync(srcPath, destPath, { recursive: true });
         }
       }
     } else if (entityType === 'subagents') {
-      // Subagents are .md files - filter by frontmatter
       if (entry.isFile() && entry.name.endsWith('.md')) {
         if (shouldIncludeForUseCases(srcPath, targetUseCases)) {
           cpSync(srcPath, destPath);
         }
       } else if (entry.isDirectory()) {
-        // Subdirectory - recurse
         mkdirSync(destPath, { recursive: true });
         copySharedEntityDir(srcPath, destPath, entityType, targetUseCases);
       } else {
-        // Other files, copy as-is
         cpSync(srcPath, destPath);
       }
     } else {
-      // Rules and commands are .md files
       if (entry.isFile() && entry.name.endsWith('.md')) {
         if (shouldIncludeForUseCases(srcPath, targetUseCases)) {
           cpSync(srcPath, destPath);
         }
       } else if (entry.isDirectory()) {
-        // Subdirectory - recurse
         mkdirSync(destPath, { recursive: true });
         copySharedEntityDir(srcPath, destPath, entityType, targetUseCases);
       } else {
-        // Other files, copy as-is
         cpSync(srcPath, destPath);
       }
     }
   }
 }
 
-/**
- * Merge a rulesync directory into the target directory
- * Later calls override earlier content
- */
-function mergeRulesyncDir(sourceDir, targetDir) {
-  // Copy each entity type from source to target
+function mergeRulesyncDir(sourceDir: string, targetDir: string): void {
   for (const entityType of ENTITY_TYPES) {
     const srcPath = join(sourceDir, entityType);
     const destPath = join(targetDir, entityType);
@@ -129,7 +110,6 @@ function mergeRulesyncDir(sourceDir, targetDir) {
     }
   }
 
-  // Also copy mcp.json and .aiignore if they exist
   const extraFiles = ['mcp.json', '.aiignore'];
   for (const file of extraFiles) {
     const srcFile = join(sourceDir, file);
@@ -140,23 +120,21 @@ function mergeRulesyncDir(sourceDir, targetDir) {
   }
 }
 
-/**
- * Compose content from a single source
- * @param {Object} options
- * @param {string} options.sourcePath - Path to the source repository
- * @param {string[]} options.useCases - Array of use-case names to compose
- * @param {string} options.outputRulesyncPath - Path to write composed content (.rulesync dir)
- * @param {Object} options.logger - Logger instance
- * @param {string} options.sourceLabel - Label for logging (optional)
- */
-function composeFromSource(options) {
+interface ComposeFromSourceOptions {
+  sourcePath: string;
+  useCases: string[];
+  outputRulesyncPath: string;
+  logger?: Logger | undefined;
+  sourceLabel?: string | undefined;
+}
+
+function composeFromSource(options: ComposeFromSourceOptions): void {
   const { sourcePath, useCases, outputRulesyncPath, logger, sourceLabel } = options;
-  
+
   const sharedDir = join(sourcePath, 'shared');
   const useCasesDir = join(sourcePath, 'use-cases');
-  const label = sourceLabel || basename(sourcePath);
+  const label = sourceLabel ?? basename(sourcePath);
 
-  // 1. Copy shared content (filtered by use-cases frontmatter)
   if (existsSync(sharedDir)) {
     logger?.verbose?.(`  ← ${label}/shared/`);
     for (const entityType of ENTITY_TYPES) {
@@ -167,8 +145,7 @@ function composeFromSource(options) {
         copySharedEntityDir(srcPath, destPath, entityType, useCases);
       }
     }
-    
-    // Also copy shared .aiignore and mcp.json
+
     const sharedExtraFiles = ['.aiignore', 'mcp.json'];
     for (const file of sharedExtraFiles) {
       const srcFile = join(sharedDir, file);
@@ -179,10 +156,9 @@ function composeFromSource(options) {
     }
   }
 
-  // 2. Overlay each use case from this source (later ones override earlier)
   for (const useCaseName of useCases) {
     const useCaseRulesyncDir = join(useCasesDir, useCaseName, '.rulesync');
-    
+
     if (existsSync(useCaseRulesyncDir)) {
       logger?.verbose?.(`  ← ${label}/use-cases/${useCaseName}/`);
       mergeRulesyncDir(useCaseRulesyncDir, outputRulesyncPath);
@@ -190,25 +166,21 @@ function composeFromSource(options) {
   }
 }
 
-/**
- * Compose content from agents repository based on use-cases
- * Supports both single source (agentsPath) and multiple sources (sourcePaths)
- * 
- * @param {Object} options
- * @param {string} options.agentsPath - Path to the agents repository (single source, for backward compat)
- * @param {Array} options.sourcePaths - Array of source paths (multiple sources)
- * @param {Array} options.resolvedSources - Array of resolved source objects (with localPath and name)
- * @param {string[]} options.useCases - Array of use-case names to compose
- * @param {string} options.outputPath - Path to write composed content
- * @param {Object} options.logger - Logger instance
- * @returns {string} Path to the .rulesync directory in output
- */
-export function compose(options) {
-  const { agentsPath, sourcePaths, resolvedSources, useCases, outputPath, logger } = options;
-  
+interface ComposeOptions {
+  agentsPath?: string;
+  sourcePaths?: string[];
+  resolvedSources?: ResolvedSource[];
+  useCases: string[];
+  outputPath: string;
+  logger?: Logger;
+}
+
+export function compose(options: ComposeOptions): string {
+  const { agentsPath, sourcePaths, resolvedSources, useCases, outputPath, logger } =
+    options;
+
   const outputRulesyncPath = join(outputPath, '.rulesync');
 
-  // Clean and create output directory
   if (existsSync(outputPath)) {
     rmSync(outputPath, { recursive: true });
   }
@@ -217,76 +189,87 @@ export function compose(options) {
   logger?.verbose?.(`Composing: ${useCases.join(' + ')}`);
   logger?.verbose?.(`Output: ${outputPath}`);
 
-  // Determine source paths to use
-  let sources = [];
-  
+  let sources: Array<{ path: string; label: string }> = [];
+
   if (resolvedSources && resolvedSources.length > 0) {
-    // Use resolved sources with labels
-    sources = resolvedSources.map(s => ({
+    sources = resolvedSources.map((s) => ({
       path: s.localPath,
-      label: s.name || basename(s.localPath)
+      label: s.name ?? basename(s.localPath),
     }));
   } else if (sourcePaths && sourcePaths.length > 0) {
-    // Use source paths array
-    sources = sourcePaths.map(p => ({ path: p, label: basename(p) }));
+    sources = sourcePaths.map((p) => ({ path: p, label: basename(p) }));
   } else if (agentsPath) {
-    // Backward compatibility: single agentsPath
     sources = [{ path: agentsPath, label: basename(agentsPath) }];
   } else {
     throw new Error('No source paths provided for composition');
   }
 
-  // Compose from each source in order (later sources override earlier)
   for (const source of sources) {
     composeFromSource({
       sourcePath: source.path,
       useCases,
       outputRulesyncPath,
       logger,
-      sourceLabel: source.label
+      sourceLabel: source.label,
     });
   }
 
   return outputRulesyncPath;
 }
 
-/**
- * Generate rulesync.jsonc configuration
- * Supports both single source (agentsPath) and multiple sources (sourcePaths/resolvedSources)
- * 
- * @param {Object} options
- * @param {string} options.agentsPath - Path to the agents repository (single source, backward compat)
- * @param {Array} options.sourcePaths - Array of source paths (multiple sources)
- * @param {Array} options.resolvedSources - Array of resolved source objects (with localPath)
- * @param {string[]} options.useCases - Array of use-case names
- * @param {string[]} options.targets - Array of target names
- * @param {string[]} options.features - Array of feature names
- * @param {Object} options.configOptions - Options from .amgr/config.json
- * @returns {Object} The rulesync configuration object
- */
-export function generateRulesyncConfig(options) {
-  const { agentsPath, sourcePaths, resolvedSources, useCases, targets, features, configOptions = {} } = options;
-  
-  // Determine source paths to use
-  let sources = [];
+interface RulesyncConfig {
+  $schema: string;
+  targets: string[];
+  features: string[];
+  baseDirs: string[];
+  delete: boolean;
+  simulateCommands?: boolean;
+  simulateSubagents?: boolean;
+  simulateSkills?: boolean;
+  modularMcp?: boolean;
+}
+
+interface GenerateRulesyncConfigOptions {
+  agentsPath?: string;
+  sourcePaths?: string[];
+  resolvedSources?: ResolvedSource[];
+  useCases: string[];
+  targets: Target[];
+  features: Feature[];
+  configOptions?: ConfigOptions;
+}
+
+export function generateRulesyncConfig(
+  options: GenerateRulesyncConfigOptions
+): RulesyncConfig {
+  const {
+    agentsPath,
+    sourcePaths,
+    resolvedSources,
+    useCases,
+    targets,
+    features,
+    configOptions = {},
+  } = options;
+
+  let sources: string[] = [];
   if (resolvedSources && resolvedSources.length > 0) {
-    sources = resolvedSources.map(s => s.localPath);
+    sources = resolvedSources.map((s) => s.localPath);
   } else if (sourcePaths && sourcePaths.length > 0) {
     sources = sourcePaths;
   } else if (agentsPath) {
     sources = [agentsPath];
   }
-  
-  // Base configuration
-  const rulesyncConfig = {
-    "$schema": "https://raw.githubusercontent.com/dyoshikawa/rulesync/refs/heads/main/config-schema.json",
-    "targets": targets,
-    "features": features,
-    "baseDirs": ["."],
-    "delete": true
+
+  const rulesyncConfig: RulesyncConfig = {
+    $schema:
+      'https://raw.githubusercontent.com/dyoshikawa/rulesync/refs/heads/main/config-schema.json',
+    targets: targets as string[],
+    features: features as string[],
+    baseDirs: ['.'],
+    delete: true,
   };
 
-  // Apply options from config
   if (configOptions.simulateCommands !== undefined) {
     rulesyncConfig.simulateCommands = configOptions.simulateCommands;
   }
@@ -300,32 +283,42 @@ export function generateRulesyncConfig(options) {
     rulesyncConfig.modularMcp = configOptions.modularMcp;
   }
 
-  // Check if any use case in any source has a custom rulesync.jsonc and merge
-  // Later sources take precedence
   for (const sourcePath of sources) {
     const useCasesDir = join(sourcePath, 'use-cases');
-    
+
     for (const useCaseName of useCases) {
       const useCaseConfig = join(useCasesDir, useCaseName, 'rulesync.jsonc');
       if (existsSync(useCaseConfig)) {
         try {
-          const customConfig = readJsoncFile(useCaseConfig);
-          // Only merge specific keys (simulation options), not targets/features
-          // since those come from the amgr config
-          const { simulateCommands, simulateSubagents, simulateSkills, modularMcp } = customConfig;
-          if (simulateCommands !== undefined && configOptions.simulateCommands === undefined) {
+          const customConfig = readJsoncFile(useCaseConfig) as Partial<RulesyncConfig>;
+          const {
+            simulateCommands,
+            simulateSubagents,
+            simulateSkills,
+            modularMcp,
+          } = customConfig;
+          if (
+            simulateCommands !== undefined &&
+            configOptions.simulateCommands === undefined
+          ) {
             rulesyncConfig.simulateCommands = simulateCommands;
           }
-          if (simulateSubagents !== undefined && configOptions.simulateSubagents === undefined) {
+          if (
+            simulateSubagents !== undefined &&
+            configOptions.simulateSubagents === undefined
+          ) {
             rulesyncConfig.simulateSubagents = simulateSubagents;
           }
-          if (simulateSkills !== undefined && configOptions.simulateSkills === undefined) {
+          if (
+            simulateSkills !== undefined &&
+            configOptions.simulateSkills === undefined
+          ) {
             rulesyncConfig.simulateSkills = simulateSkills;
           }
           if (modularMcp !== undefined && configOptions.modularMcp === undefined) {
             rulesyncConfig.modularMcp = modularMcp;
           }
-        } catch (e) {
+        } catch {
           // Ignore parsing errors in use-case configs
         }
       }
@@ -335,10 +328,10 @@ export function generateRulesyncConfig(options) {
   return rulesyncConfig;
 }
 
-/**
- * Write rulesync.jsonc to the output directory
- */
-export function writeRulesyncConfig(outputPath, config) {
+export function writeRulesyncConfig(
+  outputPath: string,
+  config: RulesyncConfig
+): string {
   const configPath = join(outputPath, 'rulesync.jsonc');
   writeFileSync(configPath, JSON.stringify(config, null, 2) + '\n');
   return configPath;
