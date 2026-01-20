@@ -1,8 +1,61 @@
-# amgr - Agents Manager CLI
+<div align="center">
+
+# amgr
+
+**Agent Manager CLI**
 
 [![npm version](https://img.shields.io/npm/v/amgr.svg)](https://www.npmjs.com/package/amgr)
 
-A CLI tool for managing AI agent configurations across projects. It composes configurations from the agents repository and deploys them to target project directories.
+*Define your AI assistant configurations once, deploy them everywhere.*
+
+amgr lets you maintain a single repository of AI rules, commands, and settings,<br>
+then selectively deploy them to any project — whether you're using Claude Code, Cursor, GitHub Copilot, or other AI tools.
+
+</div>
+
+## The Problem
+
+You have multiple projects:
+```
+~/Code/backend/     → needs coding rules, test commands, debugging skills
+~/Code/frontend/    → needs coding rules, component patterns, different MCP servers
+~/Code/blog/        → needs writing rules, no coding commands
+```
+
+Each AI tool (Claude Code, Cursor, Copilot) expects configurations in different formats and directories. Keeping them in sync manually is tedious and error-prone.
+
+## The Solution
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                        Your Rules Repository                            │
+│  ~/Code/my-agents/                                                      │
+│  ├── shared/           ← rules that apply everywhere                    │
+│  │   └── rules/                                                         │
+│  │       └── tone.md        (use-cases: [development, writing])         │
+│  │       └── testing.md     (use-cases: [development])                  │
+│  └── use-cases/                                                         │
+│      ├── development/  ← coding-specific: commands, skills, subagents   │
+│      └── writing/      ← writing-specific: style guides, templates      │
+└─────────────────────────────────────────────────────────────────────────┘
+                                    │
+                                    │ amgr sync
+                                    ▼
+     ┌──────────────────────────────┬──────────────────────────────┐
+     │                              │                              │
+     ▼                              ▼                              ▼
+┌─────────────┐             ┌─────────────┐             ┌─────────────┐
+│  backend/   │             │  frontend/  │             │    blog/    │
+│ .claude/    │             │ .claude/    │             │ .claude/    │
+│ .cursor/    │             │ .cursor/    │             │ .cursor/    │
+│             │             │             │             │             │
+│ coding rules│             │ coding rules│             │ writing     │
+│ test cmds   │             │ components  │             │ style guide │
+│ debug skills│             │ debug skills│             │             │
+└─────────────┘             └─────────────┘             └─────────────┘
+```
+
+**One source of truth → Multiple projects → Multiple AI tools**
 
 ## Installation
 
@@ -10,28 +63,36 @@ A CLI tool for managing AI agent configurations across projects. It composes con
 npm install -g amgr
 ```
 
-Or with npx (no install required):
-```bash
-npx amgr init
-```
-
 ## Quick Start
 
+### 1. Create a rules repository (one-time setup)
+
 ```bash
-# In your target project directory
-cd /path/to/my-project
-
-# Initialize configuration interactively
-amgr init
-
-# Sync agent configurations
-amgr sync
+mkdir ~/Code/my-agents && cd ~/Code/my-agents
+amgr repo init --name "my-agents"
+amgr repo add development --description "Coding and debugging"
+amgr repo add writing --description "Documentation and content"
 ```
 
-**Tip:** Set up a global source once to use it across all projects:
+This creates a repository structure where you can add your rules, commands, and skills.
+
+### 2. Set it as your global source
+
 ```bash
 amgr source add ~/Code/my-agents --global
 ```
+
+Now all your projects can use this repository.
+
+### 3. Configure any project
+
+```bash
+cd ~/Code/my-project
+amgr init                    # Interactive setup
+amgr sync                    # Deploy configurations
+```
+
+That's it. Your AI tools now have the rules you defined, formatted correctly for each tool.
 
 ## Commands
 
