@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 
 import { sync } from './commands/sync.js';
 import { init } from './commands/init.js';
+import { configEdit } from './commands/config.js';
 import { list } from './commands/list.js';
 import { validate } from './commands/validate.js';
 import { clean } from './commands/clean.js';
@@ -47,6 +48,13 @@ program
   .option('-v, --verbose', 'Enable verbose output')
   .option('-c, --config <path>', 'Use a custom config file path')
   .action(init);
+
+program
+  .command('config')
+  .description('Interactively edit the .amgr/config.json configuration file')
+  .option('-v, --verbose', 'Enable verbose output')
+  .option('-c, --config <path>', 'Use a custom config file path')
+  .action(configEdit);
 
 program
   .command('list')

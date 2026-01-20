@@ -10,7 +10,7 @@ import {
   VALID_FEATURES,
   FEATURE_DESCRIPTIONS,
 } from '../lib/constants.js';
-import { getConfigPath, configExists } from '../lib/config.js';
+import { getConfigPath, configExists, normalizeOutputDirPrefix } from '../lib/config.js';
 import { createLogger } from '../lib/utils.js';
 import {
   parseSource,
@@ -242,6 +242,38 @@ export async function init(options: CommandOptions = {}): Promise<void> {
       process.exit(1);
     }
 
+    let outputDirs: Record<string, string> | undefined;
+    if (useCases.length > 0) {
+      const configureOutputDirs = await confirm({
+        message: 'Configure custom output directories for any use-cases?',
+        default: false,
+      });
+
+      if (configureOutputDirs) {
+        outputDirs = {};
+        logger.info(
+          '\nSpecify a directory prefix for each use-case (e.g., "docs/" places files in docs/.claude/).'
+        );
+        logger.info('Leave empty to use the default (project root).\n');
+
+        for (const useCase of useCases) {
+          const dirInput = await input({
+            message: `Output directory for '${useCase}':`,
+            default: '',
+          });
+
+          const normalized = normalizeOutputDirPrefix(dirInput);
+          if (normalized) {
+            outputDirs[useCase] = normalized;
+          }
+        }
+
+        if (Object.keys(outputDirs).length === 0) {
+          outputDirs = undefined;
+        }
+      }
+    }
+
     const configureOptions = await confirm({
       message: 'Configure advanced options?',
       default: false,
@@ -290,6 +322,10 @@ export async function init(options: CommandOptions = {}): Promise<void> {
 
     if (Object.keys(configOptions).length > 0) {
       config.options = configOptions;
+    }
+
+    if (outputDirs) {
+      config.outputDirs = outputDirs;
     }
 
     const amgrDir = join(projectPath, CONFIG_DIR);

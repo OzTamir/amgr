@@ -147,6 +147,18 @@
         }
       },
       "additionalProperties": false
+    },
+    "outputDirs": {
+      "type": "object",
+      "description": "Custom output directory prefixes per use-case. By default, all use-cases deploy to the project root (e.g., .claude/, .cursor/). Use this to place specific use-cases in subdirectories (e.g., 'product': 'docs/' deploys to docs/.claude/, docs/.cursor/).",
+      "additionalProperties": {
+        "type": "string",
+        "description": "Directory prefix for this use-case. Will be normalized to end with '/'. Example: 'docs' or 'docs/' places files in docs/.claude/ instead of .claude/"
+      },
+      "examples": [
+        { "product": "docs/" },
+        { "product": "docs/", "writing": "content/" }
+      ]
     }
   },
   "additionalProperties": false

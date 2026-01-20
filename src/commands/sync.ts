@@ -7,6 +7,7 @@ import {
   loadAndValidateConfig,
   expandTargets,
   getEffectiveOptions,
+  normalizeOutputDirPrefix,
 } from '../lib/config.js';
 import {
   getTrackedFiles,
@@ -23,6 +24,35 @@ import { createLogger, isVerbose } from '../lib/utils.js';
 import { resolveSources, getMergedSources } from '../lib/sources.js';
 import { getGlobalSources } from '../lib/global-config.js';
 import type { CommandOptions } from '../types/common.js';
+
+interface OutputGroup {
+  prefix: string;
+  useCases: string[];
+}
+
+function groupUseCasesByOutputDir(
+  useCases: string[],
+  outputDirs: Record<string, string> | undefined
+): OutputGroup[] {
+  const groups = new Map<string, string[]>();
+
+  for (const useCase of useCases) {
+    const rawPrefix = outputDirs?.[useCase] ?? '';
+    const prefix = normalizeOutputDirPrefix(rawPrefix);
+
+    const existing = groups.get(prefix);
+    if (existing) {
+      existing.push(useCase);
+    } else {
+      groups.set(prefix, [useCase]);
+    }
+  }
+
+  return Array.from(groups.entries()).map(([prefix, useCases]) => ({
+    prefix,
+    useCases,
+  }));
+}
 
 export async function sync(options: CommandOptions = {}): Promise<void> {
   const projectPath = process.cwd();
@@ -87,85 +117,112 @@ export async function sync(options: CommandOptions = {}): Promise<void> {
       }
     }
 
-    const tempDir = join(tmpdir(), `amgr-${Date.now()}`);
-    mkdirSync(tempDir, { recursive: true });
-    logger.verbose(`Temp directory: ${tempDir}`);
+    const outputGroups = groupUseCasesByOutputDir(useCases, config.outputDirs);
+    const baseTempDir = join(tmpdir(), `amgr-${Date.now()}`);
+    mkdirSync(baseTempDir, { recursive: true });
+    logger.verbose(`Temp directory: ${baseTempDir}`);
+
+    const allDeployed: string[] = [];
+    const allSkipped: string[] = [];
+    const allConflicts: { file: string; reason: string }[] = [];
 
     try {
-      logger.info(`Composing content for: ${useCases.join(' + ')}...`);
-      compose({
-        resolvedSources,
-        useCases,
-        outputPath: tempDir,
-        logger,
-      });
+      for (let i = 0; i < outputGroups.length; i++) {
+        const group = outputGroups[i]!;
+        const { prefix, useCases: groupUseCases } = group;
+        const prefixLabel = prefix || '(root)';
 
-      logger.verbose('Generating rulesync.jsonc...');
-      const rulesyncConfig = generateRulesyncConfig({
-        resolvedSources,
-        useCases,
-        targets,
-        features,
-        configOptions,
-      });
-      writeRulesyncConfig(tempDir, rulesyncConfig);
+        const tempDir =
+          outputGroups.length === 1
+            ? baseTempDir
+            : join(baseTempDir, `group-${i}`);
 
-      logger.info('Running rulesync generate...');
-      if (!dryRun) {
-        try {
-          execSync('npx rulesync generate', {
-            cwd: tempDir,
-            stdio: verbose ? 'inherit' : 'pipe',
-          });
-        } catch {
-          throw new Error(
-            'Failed to run rulesync generate. Make sure rulesync is installed.'
-          );
+        if (outputGroups.length > 1) {
+          mkdirSync(tempDir, { recursive: true });
         }
-      } else {
-        logger.info('(dry-run: skipping rulesync generate)');
+
+        logger.info(
+          `Composing content for: ${groupUseCases.join(' + ')} → ${prefixLabel}...`
+        );
+        compose({
+          resolvedSources,
+          useCases: groupUseCases,
+          outputPath: tempDir,
+          logger,
+        });
+
+        logger.verbose('Generating rulesync.jsonc...');
+        const rulesyncConfig = generateRulesyncConfig({
+          resolvedSources,
+          useCases: groupUseCases,
+          targets,
+          features,
+          configOptions,
+        });
+        writeRulesyncConfig(tempDir, rulesyncConfig);
+
+        logger.info('Running rulesync generate...');
+        if (!dryRun) {
+          try {
+            execSync('npx rulesync generate', {
+              cwd: tempDir,
+              stdio: verbose ? 'inherit' : 'pipe',
+            });
+          } catch {
+            throw new Error(
+              'Failed to run rulesync generate. Make sure rulesync is installed.'
+            );
+          }
+        } else {
+          logger.info('(dry-run: skipping rulesync generate)');
+        }
+
+        logger.info(`Deploying files to ${prefixLabel}...`);
+        const { deployed, skipped, conflicts } = deploy({
+          generatedPath: tempDir,
+          projectPath,
+          targets,
+          trackedFiles,
+          dryRun,
+          logger,
+          outputPrefix: prefix,
+        });
+
+        allDeployed.push(...deployed);
+        allSkipped.push(...skipped);
+        allConflicts.push(...conflicts);
       }
 
-      logger.info('Deploying files...');
-      const { deployed, skipped, conflicts } = deploy({
-        generatedPath: tempDir,
-        projectPath,
-        targets,
-        trackedFiles,
-        dryRun,
-        logger,
-      });
-
-      if (!dryRun && deployed.length > 0) {
+      if (!dryRun && allDeployed.length > 0) {
         logger.verbose('Updating lock file...');
-        writeLockFile(projectPath, deployed);
+        writeLockFile(projectPath, allDeployed);
       }
 
       logger.info('');
       if (dryRun) {
         logger.info('Dry run complete. No changes were made.');
-        logger.info(`Would deploy ${deployed.length} files`);
+        logger.info(`Would deploy ${allDeployed.length} files`);
       } else {
-        logger.success(`Synced ${deployed.length} files`);
+        logger.success(`Synced ${allDeployed.length} files`);
       }
 
-      if (skipped.length > 0) {
-        logger.warn(`Skipped ${skipped.length} files`);
+      if (allSkipped.length > 0) {
+        logger.warn(`Skipped ${allSkipped.length} files`);
       }
 
-      if (conflicts.length > 0) {
-        logger.warn(`${conflicts.length} conflicts with native files (preserved)`);
+      if (allConflicts.length > 0) {
+        logger.warn(`${allConflicts.length} conflicts with native files (preserved)`);
       }
 
-      if (verbose && deployed.length > 0) {
+      if (verbose && allDeployed.length > 0) {
         logger.info('\nDeployed files:');
-        for (const file of deployed) {
+        for (const file of allDeployed) {
           logger.info(`  ${file}`);
         }
       }
     } finally {
-      if (existsSync(tempDir)) {
-        rmSync(tempDir, { recursive: true });
+      if (existsSync(baseTempDir)) {
+        rmSync(baseTempDir, { recursive: true });
       }
     }
   } catch (e) {
