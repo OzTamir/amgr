@@ -2,9 +2,14 @@ import { z } from 'zod';
 import { SourcesArraySchema } from './sources.js';
 import { VALID_TARGETS, VALID_FEATURES } from '../types/config.js';
 
-export const TargetSchema = z.enum(['*', ...VALID_TARGETS] as [string, ...string[]]);
+export const TargetSchema = z.enum([
+  '*',
+  ...VALID_TARGETS,
+] as unknown as [string, ...string[]]);
 
-export const FeatureSchema = z.enum(VALID_FEATURES as [string, ...string[]]);
+export const FeatureSchema = z.enum([
+  ...VALID_FEATURES,
+] as unknown as [string, ...string[]]);
 
 export const GlobalSourcesPositionSchema = z.enum(['prepend', 'append']);
 
