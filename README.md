@@ -123,7 +123,27 @@ Prompts for:
 - Target AI tools (claudecode, cursor, copilot, etc.)
 - Features to include (rules, commands, skills, etc.)
 - Use-cases (development, writing, product, etc.)
+- Output directories (optional, per use-case)
 - Advanced options (optional)
+
+### `amgr config`
+
+Interactively edit an existing `.amgr/config.json` configuration file.
+
+```bash
+amgr config
+```
+
+Provides a menu to edit:
+- Targets - AI tools to generate configs for
+- Features - Content types to include
+- Use-cases - Which use-cases to enable
+- Output directories - Custom paths per use-case
+- Options - Advanced settings
+
+**Options:**
+- `-v, --verbose` - Enable verbose output
+- `-c, --config <path>` - Use a custom config file path
 
 ### `amgr list`
 
