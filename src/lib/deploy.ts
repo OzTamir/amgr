@@ -71,6 +71,7 @@ interface DeployOptions {
   trackedFiles?: string[];
   dryRun?: boolean;
   logger?: Logger;
+  outputPrefix?: string;
 }
 
 export function deploy(options: DeployOptions): DeployResult {
@@ -81,6 +82,7 @@ export function deploy(options: DeployOptions): DeployResult {
     trackedFiles = [],
     dryRun = false,
     logger,
+    outputPrefix = '',
   } = options;
 
   const deployed: string[] = [];
@@ -90,14 +92,14 @@ export function deploy(options: DeployOptions): DeployResult {
   const targetDirs = getGeneratedTargetDirs(generatedPath, targets);
 
   for (const { dir, fullPath: sourceDirPath } of targetDirs) {
-    const destDirPath = join(projectPath, dir);
+    const destDirPath = join(projectPath, outputPrefix, dir);
 
     const files = getAllFiles(sourceDirPath);
 
     for (const file of files) {
       const sourceFile = join(sourceDirPath, file);
       const destFile = join(destDirPath, file);
-      const relativeDestPath = join(dir, file);
+      const relativeDestPath = join(outputPrefix, dir, file);
 
       if (existsSync(destFile) && !trackedFiles.includes(relativeDestPath)) {
         conflicts.push({
@@ -138,7 +140,8 @@ export function deploy(options: DeployOptions): DeployResult {
 
 export function getFilesToDeploy(
   generatedPath: string,
-  targets?: Target[]
+  targets?: Target[],
+  outputPrefix = ''
 ): string[] {
   const files: string[] = [];
   const targetDirs = getGeneratedTargetDirs(generatedPath, targets);
@@ -146,7 +149,7 @@ export function getFilesToDeploy(
   for (const { dir, fullPath: sourceDirPath } of targetDirs) {
     const dirFiles = getAllFiles(sourceDirPath);
     for (const file of dirFiles) {
-      files.push(join(dir, file));
+      files.push(join(outputPrefix, dir, file));
     }
   }
 
@@ -157,10 +160,11 @@ export function checkConflicts(
   generatedPath: string,
   projectPath: string,
   trackedFiles: string[],
-  targets?: Target[]
+  targets?: Target[],
+  outputPrefix = ''
 ): string[] {
   const conflicts: string[] = [];
-  const filesToDeploy = getFilesToDeploy(generatedPath, targets);
+  const filesToDeploy = getFilesToDeploy(generatedPath, targets, outputPrefix);
 
   for (const file of filesToDeploy) {
     const destPath = join(projectPath, file);

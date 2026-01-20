@@ -19,6 +19,8 @@ export const ConfigOptionsSchema = z
   })
   .strict();
 
+export const OutputDirsSchema = z.record(z.string(), z.string());
+
 export const AmgrConfigSchema = z
   .object({
     $schema: z.string().optional(),
@@ -27,6 +29,7 @@ export const AmgrConfigSchema = z
     features: z.array(FeatureSchema).min(1, 'At least one feature is required'),
     'use-cases': z.array(z.string()).min(1, 'At least one use-case is required'),
     options: ConfigOptionsSchema.optional(),
+    outputDirs: OutputDirsSchema.optional(),
   })
   .strict();
 

@@ -53,16 +53,68 @@ export function loadConfig(projectPath: string, customPath?: string): AmgrConfig
   }
 }
 
+export function normalizeOutputDirPrefix(prefix: string): string {
+  const trimmed = prefix.trim();
+  if (!trimmed) {
+    return '';
+  }
+  return trimmed.endsWith('/') ? trimmed : `${trimmed}/`;
+}
+
+export function validateOutputDirs(
+  outputDirs: Record<string, string> | undefined,
+  useCases: string[]
+): string[] {
+  if (!outputDirs) {
+    return [];
+  }
+
+  const errors: string[] = [];
+  const useCaseSet = new Set(useCases);
+
+  for (const [useCase, prefix] of Object.entries(outputDirs)) {
+    if (!useCaseSet.has(useCase)) {
+      errors.push(
+        `outputDirs references unknown use-case '${useCase}'. ` +
+          `Available use-cases: ${useCases.join(', ')}`
+      );
+    }
+
+    if (prefix.startsWith('/')) {
+      errors.push(
+        `outputDirs['${useCase}'] must be a relative path, not an absolute path: '${prefix}'`
+      );
+    }
+
+    if (prefix.includes('..')) {
+      errors.push(
+        `outputDirs['${useCase}'] must not contain '..': '${prefix}'`
+      );
+    }
+  }
+
+  return errors;
+}
+
 export function validateConfig(config: unknown): string[] {
   const result = validateWithSchemaGetErrors(AmgrConfigSchema, config);
   if (result.success) {
+    const errors: string[] = [];
+
     if (result.data.sources !== undefined) {
       const sourceErrors = validateSources(result.data.sources);
-      if (sourceErrors.length > 0) {
-        return sourceErrors;
-      }
+      errors.push(...sourceErrors);
     }
-    return [];
+
+    if (result.data.outputDirs !== undefined) {
+      const outputDirErrors = validateOutputDirs(
+        result.data.outputDirs,
+        result.data['use-cases'] ?? []
+      );
+      errors.push(...outputDirErrors);
+    }
+
+    return errors;
   }
   return result.errors;
 }

@@ -370,6 +370,22 @@ Configuration lives in `.amgr/config.json` in your project directory.
 }
 ```
 
+### Example with Custom Output Directories
+
+```json
+{
+  "$schema": "https://raw.githubusercontent.com/oztamir/amgr/main/schemas/amgr.schema.json",
+  "targets": ["claudecode", "cursor"],
+  "features": ["rules", "commands"],
+  "use-cases": ["development", "product"],
+  "outputDirs": {
+    "product": "docs/"
+  }
+}
+```
+
+This places `product` use-case files in `docs/.claude/` and `docs/.cursor/` instead of the project root.
+
 ### Properties
 
 #### `sources` (optional)
@@ -461,6 +477,34 @@ Advanced configuration options:
 | `modularMcp` | boolean | `false` | Enable modular-mcp for Claude Code (reduces token usage) |
 | `ignoreGlobalSources` | boolean | `false` | Ignore global sources for this project |
 | `globalSourcesPosition` | string | `"prepend"` | Where to merge global sources: `"prepend"` (project overrides global) or `"append"` (global overrides project) |
+
+#### `outputDirs` (optional)
+
+Custom output directory prefixes per use-case. By default, all use-cases deploy files to the project root (e.g., `.claude/`, `.cursor/`). Use `outputDirs` to place specific use-cases in subdirectories.
+
+```json
+{
+  "use-cases": ["development", "product"],
+  "outputDirs": {
+    "product": "docs/"
+  }
+}
+```
+
+With this configuration:
+- `development` rules → `.claude/`, `.cursor/` (default)
+- `product` rules → `docs/.claude/`, `docs/.cursor/`
+
+Rules from `shared/` are deployed to all configured output directories.
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `<use-case>` | string | Directory prefix for this use-case. Will be normalized to end with `/`. Example: `"docs"` or `"docs/"` |
+
+**Validation rules:**
+- Keys must match use-cases in the `use-cases` array
+- Values must be relative paths (no leading `/`)
+- Values must not contain `..` path traversal
 
 ## File Tracking
 

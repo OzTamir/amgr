@@ -60,6 +60,7 @@ export interface AmgrConfig {
   features: Feature[];
   'use-cases': string[];
   options?: ConfigOptions | undefined;
+  outputDirs?: Record<string, string> | undefined;
 }
 
 export interface GlobalConfig {
