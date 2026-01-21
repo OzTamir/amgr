@@ -32,11 +32,13 @@ Each AI tool (Claude Code, Cursor, Copilot) expects configurations in different 
 │  ~/Code/my-agents/                                                      │
 │  ├── shared/           ← rules that apply everywhere                    │
 │  │   └── rules/                                                         │
-│  │       └── tone.md        (use-cases: [development, writing])         │
-│  │       └── testing.md     (use-cases: [development])                  │
-│  └── use-cases/                                                         │
-│      ├── development/  ← coding-specific: commands, skills, subagents   │
-│      └── writing/      ← writing-specific: style guides, templates      │
+│  │       └── tone.md        (profiles: [development, writing])          │
+│  │       └── testing.md     (profiles: [development])                   │
+│  ├── development/      ← nested profile with sub-profiles               │
+│  │   ├── _shared/      ← shared across frontend/backend                 │
+│  │   ├── frontend/     ← sub-profile: development:frontend              │
+│  │   └── backend/      ← sub-profile: development:backend               │
+│  └── writing/          ← flat profile: style guides, templates          │
 └─────────────────────────────────────────────────────────────────────────┘
                                     │
                                     │ amgr sync
@@ -149,12 +151,14 @@ Provides a menu to edit:
 
 ### `amgr list`
 
-List available use-cases from the agents repository.
+List available profiles from the agents repository.
 
 ```bash
 amgr list
 amgr list --verbose    # Also show targets and features
 ```
+
+Nested profiles are displayed with a tree structure showing their sub-profiles.
 
 ### `amgr validate`
 
@@ -310,28 +314,38 @@ my-agents-repo/
 
 #### `amgr repo add <name>`
 
-Add a new use-case to the repository.
+Add a new profile to the repository. Supports flat profiles, nested profiles, and sub-profiles.
 
+**Flat profile:**
 ```bash
-amgr repo add development
-amgr repo add development --description "Coding and debugging tasks"
+amgr repo add writing
+amgr repo add writing --description "Documentation and content"
 ```
 
-Creates a use-case scaffold with:
-- `use-cases/<name>/.rulesync/` directory with subdirectories
-- `use-cases/<name>/rulesync.jsonc` configuration file
-- Entry in `repo.json`
+**Nested profile (with shared content across sub-profiles):**
+```bash
+amgr repo add development --nested
+amgr repo add development --nested --description "Coding and debugging"
+```
+
+**Sub-profile:**
+```bash
+amgr repo add development:frontend
+amgr repo add development:frontend --description "React, Vue, browser APIs"
+```
 
 **Options:**
-- `--description <desc>` - Use-case description (prompted if not provided)
+- `--description <desc>` - Profile description (prompted if not provided)
+- `--nested` - Create a nested profile with `_shared/` directory
 
 #### `amgr repo remove <name>`
 
-Remove a use-case from the repository.
+Remove a profile from the repository.
 
 ```bash
-amgr repo remove development
-amgr repo remove development --force    # Skip confirmation
+amgr repo remove writing              # Remove flat profile
+amgr repo remove development:frontend # Remove sub-profile
+amgr repo remove development --force  # Skip confirmation
 ```
 
 **Options:**
@@ -339,12 +353,14 @@ amgr repo remove development --force    # Skip confirmation
 
 #### `amgr repo list`
 
-List use-cases in the current repository.
+List profiles in the current repository.
 
 ```bash
 amgr repo list
 amgr repo list --verbose    # Show orphaned directories
 ```
+
+Nested profiles are displayed with a tree structure showing their sub-profiles.
 
 ### Repository Auto-Detection
 
@@ -373,7 +389,7 @@ Configuration lives in `.amgr/config.json` in your project directory.
   "$schema": "https://raw.githubusercontent.com/oztamir/amgr/main/schemas/amgr.schema.json",
   "targets": ["claudecode", "cursor"],
   "features": ["rules", "commands", "skills"],
-  "use-cases": ["development"]
+  "profiles": ["development:frontend"]
 }
 ```
 
@@ -388,7 +404,7 @@ Configuration lives in `.amgr/config.json` in your project directory.
   ],
   "targets": ["claudecode", "cursor"],
   "features": ["rules", "commands", "skills"],
-  "use-cases": ["development", "my-custom-usecase"]
+  "profiles": ["development:frontend", "writing"]
 }
 ```
 
@@ -399,12 +415,14 @@ Configuration lives in `.amgr/config.json` in your project directory.
   "$schema": "https://raw.githubusercontent.com/oztamir/amgr/main/schemas/amgr.schema.json",
   "targets": ["claudecode", "cursor"],
   "features": ["rules", "commands"],
-  "use-cases": ["development", "product"],
+  "profiles": ["development:frontend", "product"],
   "outputDirs": {
     "product": "docs/"
   }
 }
 ```
+
+> **Migration Note**: The `use-cases` field is deprecated. Use `profiles` instead. Both are supported for backwards compatibility.
 
 This places `product` use-case files in `docs/.claude/` and `docs/.cursor/` instead of the project root.
 
@@ -468,11 +486,24 @@ Content types to include:
 | `subagents` | Specialized AI assistant definitions |
 | `skills` | Directory-based capability definitions |
 
-#### `use-cases` (required)
+#### `profiles` (required)
 
-Use-case identifiers that map to folders in your configured sources. Any use-case name defined in a source's `repo.json` is valid.
+Profile identifiers that map to folders in your configured sources. Supports both flat profiles and nested profiles with sub-profiles.
 
-**Note:** Sources must be configured for `amgr sync` to work. Use-cases are defined by source repositories, not hardcoded. Run `amgr list` to see available use-cases from your configured sources.
+**Profile selection syntax:**
+
+| Syntax | Meaning |
+|--------|---------|
+| `"writing"` | Flat profile |
+| `"development:frontend"` | Single sub-profile |
+| `"development:*"` | All sub-profiles (wildcard) |
+| `"development"` | Shorthand for `development:*` if nested |
+
+**Note:** Sources must be configured for `amgr sync` to work. Profiles are defined by source repositories. Run `amgr list` to see available profiles from your configured sources.
+
+#### `use-cases` (deprecated)
+
+> **Deprecated**: Use `profiles` instead. Still supported for backwards compatibility.
 
 #### `options` (optional)
 
@@ -589,9 +620,13 @@ When managing a standalone amgr repository, `repo.json` defines the repository m
   "description": "My personal agent configurations",
   "version": "1.0.0",
   "author": "Your Name",
-  "use-cases": {
+  "profiles": {
     "development": {
-      "description": "Coding, debugging, and testing"
+      "description": "Coding and debugging",
+      "sub-profiles": {
+        "frontend": { "description": "React, Vue, browser APIs" },
+        "backend": { "description": "Node.js, APIs, databases" }
+      }
     },
     "writing": {
       "description": "Documentation and content creation"
@@ -608,9 +643,12 @@ When managing a standalone amgr repository, `repo.json` defines the repository m
 | `description` | No | Repository description |
 | `version` | No | Semantic version (e.g., "1.0.0") |
 | `author` | No | Repository author or maintainer |
-| `use-cases` | Yes | Object mapping use-case names to their metadata |
+| `profiles` | Yes* | Object mapping profile names to their metadata |
+| `use-cases` | Yes* | (Deprecated) Object mapping use-case names to their metadata |
 
-Each use-case entry must include a `description` field.
+*Either `profiles` or `use-cases` is required. Prefer `profiles` for new repositories.
+
+Each profile entry must include a `description` field. Nested profiles can include a `sub-profiles` object.
 
 ## How It Works
 

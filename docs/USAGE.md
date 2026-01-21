@@ -35,7 +35,7 @@ Follow the interactive prompts to:
 1. Add sources (git URLs or local paths to agent configs)
 2. Select target AI tools (claudecode, cursor, etc.)
 3. Select features to include (rules, commands, skills, etc.)
-4. Choose use-cases from your sources
+4. Choose profiles from your sources
 
 ### 2. Sync Configurations
 
@@ -45,7 +45,7 @@ amgr sync
 
 This will:
 - Fetch/update sources
-- Compose content from your selected use-cases
+- Compose content from your selected profiles
 - Generate tool-specific configurations
 - Deploy files to your project
 
@@ -55,7 +55,7 @@ This will:
 amgr list
 ```
 
-Shows configured sources and available use-cases.
+Shows configured sources and available profiles (including nested profiles with sub-profiles).
 
 ## Commands Reference
 
@@ -92,12 +92,14 @@ If a config already exists, prompts for confirmation to overwrite.
 
 ### `amgr list`
 
-List available use-cases from configured sources.
+List available profiles from configured sources.
 
 ```bash
-amgr list                # Show sources and use-cases
+amgr list                # Show sources and profiles
 amgr list --verbose      # Also show available targets and features
 ```
+
+Nested profiles are displayed with a tree structure showing their sub-profiles.
 
 ### `amgr validate`
 
@@ -298,16 +300,39 @@ my-agents-repo/
 └── use-cases/
 ```
 
-#### Add a Use-Case
+#### Add a Profile
 
+**Flat profile (simple):**
 ```bash
-amgr repo add development
-amgr repo add development --description "Coding and debugging"
+amgr repo add writing
+amgr repo add writing --description "Documentation and content"
+```
+
+**Nested profile (with shared content across sub-profiles):**
+```bash
+amgr repo add development --nested
+amgr repo add development --nested --description "Coding and debugging"
 ```
 
 Creates:
 ```
-use-cases/development/
+development/
+└── _shared/
+    ├── rules/
+    ├── commands/
+    ├── skills/
+    └── subagents/
+```
+
+**Sub-profile (adds to existing nested profile):**
+```bash
+amgr repo add development:frontend
+amgr repo add development:frontend --description "React, Vue, browser APIs"
+```
+
+Creates:
+```
+development/frontend/
 ├── .rulesync/
 │   ├── rules/
 │   ├── commands/
@@ -316,19 +341,22 @@ use-cases/development/
 └── rulesync.jsonc
 ```
 
-#### Remove a Use-Case
+#### Remove a Profile
 
 ```bash
-amgr repo remove development
-amgr repo remove development --force
+amgr repo remove writing              # Remove flat profile
+amgr repo remove development:frontend # Remove sub-profile
+amgr repo remove development --force  # Skip confirmation
 ```
 
-#### List Use-Cases
+#### List Profiles
 
 ```bash
 amgr repo list
 amgr repo list --verbose  # Show orphaned directories
 ```
+
+Nested profiles are displayed with a tree structure showing their sub-profiles.
 
 ## Configuration
 
@@ -343,9 +371,11 @@ Configuration lives in `.amgr/config.json`:
   ],
   "targets": ["claudecode", "cursor"],
   "features": ["rules", "commands", "skills"],
-  "use-cases": ["development"]
+  "profiles": ["development:frontend", "writing"]
 }
 ```
+
+> **Migration Note**: The `use-cases` field is deprecated. Use `profiles` instead. Both are supported for backwards compatibility.
 
 ### Sources
 
@@ -395,12 +425,23 @@ Content types to include:
 | `subagents` | Specialized AI assistant definitions |
 | `skills` | Directory-based capability definitions |
 
-### Use-Cases
+### Profiles
 
-Identifiers that map to folders in your sources. Examples:
-- `development` - Coding, debugging, testing
+Identifiers that map to folders in your sources. Supports both flat profiles and nested profiles with sub-profiles.
+
+**Profile selection syntax:**
+
+| Syntax | Meaning |
+|--------|---------|
+| `"writing"` | Flat profile |
+| `"development:frontend"` | Single sub-profile |
+| `"development:*"` | All sub-profiles under development |
+| `"development"` | Shorthand for `development:*` (if nested) |
+
+**Examples:**
+- `development:frontend` - Frontend-specific coding rules
+- `development:backend` - Backend-specific coding rules
 - `writing` - Documentation, content creation
-- `product` - Product management tasks
 
 ### Options
 
@@ -438,7 +479,7 @@ Layer personal overrides on top of company-wide rules:
   ],
   "targets": ["claudecode", "cursor"],
   "features": ["rules", "commands", "skills"],
-  "use-cases": ["development"]
+  "profiles": ["development:frontend"]
 }
 ```
 
@@ -469,6 +510,75 @@ Use a local repo during development:
   ]
 }
 ```
+
+## Nested Profiles Workflow
+
+Nested profiles allow you to share content across related sub-profiles while still having sub-profile-specific rules.
+
+### Creating a Nested Profile Structure
+
+```bash
+# Initialize repo
+amgr repo init --name "my-agents"
+
+# Create nested profile with shared directory
+amgr repo add development --nested --description "Coding and debugging"
+
+# Add sub-profiles
+amgr repo add development:frontend --description "React, Vue, browser APIs"
+amgr repo add development:backend --description "Node.js, APIs, databases"
+
+# Create flat profile for non-hierarchical use case
+amgr repo add writing --description "Documentation"
+```
+
+This creates:
+```
+my-agents/
+├── repo.json
+├── shared/                     # Global shared (all profiles)
+├── development/                # Nested profile
+│   ├── _shared/               # Shared across frontend/backend
+│   │   └── rules/
+│   ├── frontend/.rulesync/    # Frontend-specific
+│   └── backend/.rulesync/     # Backend-specific
+└── writing/.rulesync/         # Flat profile (legacy use-cases/ also supported)
+```
+
+### Using Nested Profiles in Projects
+
+```json
+{
+  "profiles": ["development:frontend", "writing"]
+}
+```
+
+**Composition for `development:frontend`:**
+1. `/shared/` - Global shared (filtered by frontmatter)
+2. `/development/_shared/` - Development shared (filtered by frontmatter)
+3. `/development/frontend/.rulesync/` - Sub-profile specific (all content)
+
+### Frontmatter in Nested Profiles
+
+**Global shared (`/shared/rules/tone.md`):**
+```yaml
+---
+profiles:
+  - development
+  - writing
+  - development:frontend
+---
+```
+
+**Parent shared (`/development/_shared/rules/coding.md`):**
+```yaml
+---
+profiles:
+  - frontend
+  - backend
+---
+```
+Note: In `_shared/` directories, use sub-profile names only (not full paths).
 
 ## Common Use Cases
 
@@ -529,9 +639,16 @@ amgr source add ~/my-agents
 amgr source add https://github.com/user/agents
 ```
 
-### "Use-case 'X' not found"
+### "Profile 'X' not found"
 
-The use-case doesn't exist in any configured source. Check available use-cases:
+The profile doesn't exist in any configured source. Check available profiles:
+```bash
+amgr list
+```
+
+### "Sub-profile 'X' not found under 'Y'"
+
+The sub-profile doesn't exist in the specified parent profile. Check available sub-profiles:
 ```bash
 amgr list
 ```

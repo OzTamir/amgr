@@ -5,7 +5,7 @@
 `amgr` is a CLI tool for managing AI agent configurations across projects. It composes configurations from one or more source repositories and deploys them to target project directories.
 
 When running `amgr` in a project folder containing a `.amgr/config.json` configuration file, the tool:
-1. Reads the configuration to determine sources, targets, features, and use-cases
+1. Reads the configuration to determine sources, targets, features, and profiles
 2. Resolves sources (fetching git repos or validating local paths)
 3. Composes the appropriate content from all configured sources
 4. Runs rulesync to generate tool-specific configurations
@@ -62,7 +62,7 @@ The configuration file lives in the `.amgr` directory of a target project and de
   ],
   "targets": ["claudecode", "cursor"],
   "features": ["rules", "commands", "skills"],
-  "use-cases": ["development"],
+  "profiles": ["development:frontend", "writing"],
   "options": {
     "simulateCommands": false,
     "simulateSubagents": false,
@@ -73,6 +73,8 @@ The configuration file lives in the `.amgr` directory of a target project and de
 ```
 
 **Note:** The `$schema` property is optional but recommended for IDE validation support.
+
+> **Migration Note**: The `use-cases` field is deprecated. Use `profiles` instead. Both fields are supported for backwards compatibility, but `profiles` takes precedence when both are present.
 
 #### `sources` (required for sync)
 An array of source repositories containing agent configurations. Sources can be git URLs or local paths.
@@ -154,24 +156,49 @@ An array of content types to include in the generated configuration.
 }
 ```
 
-#### `use-cases` (required)
-An array of use-case identifiers that map to folders under `use-cases/` in the source repositories.
+#### `profiles` (required)
+An array of profile identifiers that map to folders in the source repositories.
 
-Use-cases are defined in source repositories via their `repo.json` file. Any use-case name that exists in a configured source is valid. When multiple use-cases are specified, they are composed in order (later use-cases override earlier ones).
+Profiles support two structures:
+- **Flat profiles**: Simple profiles with content in `use-cases/{profile}/.rulesync/` or `{profile}/.rulesync/`
+- **Nested profiles**: Profiles with sub-profiles, content in `{profile}/{sub-profile}/.rulesync/` and shared content in `{profile}/_shared/`
+
+Profiles are defined in source repositories via their `repo.json` file.
+
+**Profile selection syntax:**
+
+| Syntax | Meaning |
+|--------|---------|
+| `"writing"` | Flat profile |
+| `"development:frontend"` | Single sub-profile |
+| `"development:*"` | All sub-profiles under development |
+| `"development"` | Shorthand for `development:*` (if nested) or flat profile (if no sub-profiles) |
 
 **Example:**
 ```json
 {
-  "use-cases": ["development"]
+  "profiles": ["development:frontend"]
 }
 ```
 
-**Example with multiple use-cases (merged):**
+**Example with multiple profiles (merged):**
 ```json
 {
-  "use-cases": ["development", "writing"]
+  "profiles": ["development:frontend", "writing"]
 }
 ```
+
+**Example with wildcard (all sub-profiles):**
+```json
+{
+  "profiles": ["development:*", "writing"]
+}
+```
+
+#### `use-cases` (deprecated)
+> **Deprecated**: Use `profiles` instead. This field is maintained for backwards compatibility.
+
+An array of use-case identifiers that map to folders under `use-cases/` in the source repositories.
 
 #### `options` (optional)
 Advanced configuration options passed to rulesync.
@@ -256,7 +283,7 @@ amgr init
 3. Creates `.amgr/config.json` with the selected configuration
 
 #### `amgr list`
-List available use-cases from configured sources.
+List available profiles from configured sources.
 
 ```bash
 amgr list
@@ -264,15 +291,19 @@ amgr list
 
 **Output (example):**
 ```
-Available use-cases from configured sources:
+Available profiles from configured sources:
 
 Source: ~/Code/agents
-  development   - Coding, debugging, testing, software engineering
-  writing       - Documentation, content creation, technical writing
+  development                    - Coding and debugging
+    ├── frontend                 - React, Vue, browser APIs
+    └── backend                  - Node.js, APIs, databases
+  writing                        - Documentation, content creation
 
 Source: https://github.com/company/rules
-  company-dev   - Company-specific development rules
+  company-dev                    - Company-specific development rules
 ```
+
+Nested profiles display with a tree structure showing their sub-profiles.
 
 **Note:** Requires at least one source configured in `.amgr/config.json`. Run `amgr init` first if no config exists.
 
@@ -385,34 +416,51 @@ amgr repo init --name "my-agents" --description "My agent configs" --author "You
 - `--author <author>` - Repository author
 
 ##### `amgr repo add <name>`
-Add a new use-case to the repository.
+Add a new profile to the repository. Supports flat profiles, nested profiles, and sub-profiles.
 
+**Flat profile (simple):**
 ```bash
-amgr repo add development
-amgr repo add development --description "Coding and debugging tasks"
+amgr repo add writing
+amgr repo add writing --description "Documentation and content"
+```
+
+**Nested profile (with `_shared/` directory for content shared across sub-profiles):**
+```bash
+amgr repo add development --nested
+amgr repo add development --nested --description "Coding and debugging"
+```
+
+**Sub-profile (adds to existing nested profile):**
+```bash
+amgr repo add development:frontend
+amgr repo add development:frontend --description "React, Vue, browser APIs"
 ```
 
 **Options:**
-- `--description <desc>` - Use-case description (prompted if not provided)
+- `--description <desc>` - Profile description (prompted if not provided)
+- `--nested` - Create a nested profile with `_shared/` directory
 
 ##### `amgr repo remove <name>`
-Remove a use-case from the repository.
+Remove a profile from the repository.
 
 ```bash
-amgr repo remove development
-amgr repo remove development --force    # Skip confirmation
+amgr repo remove writing              # Remove flat profile
+amgr repo remove development:frontend # Remove sub-profile
+amgr repo remove development --force  # Skip confirmation
 ```
 
 **Options:**
 - `-f, --force` - Skip confirmation prompt
 
 ##### `amgr repo list`
-List use-cases in the current repository (requires `repo.json` in current directory).
+List profiles in the current repository (requires `repo.json` in current directory).
 
 ```bash
 amgr repo list
 amgr repo list --verbose    # Show orphaned directories
 ```
+
+Displays nested profiles with a tree structure showing sub-profiles.
 
 ### Flags
 
@@ -434,11 +482,11 @@ amgr repo list --verbose    # Show orphaned directories
   ],
   "targets": ["claudecode"],
   "features": ["rules"],
-  "use-cases": ["development"]
+  "profiles": ["development"]
 }
 ```
 
-### Development Project
+### Development Project with Nested Profiles
 ```json
 {
   "sources": [
@@ -446,7 +494,7 @@ amgr repo list --verbose    # Show orphaned directories
   ],
   "targets": ["claudecode", "cursor"],
   "features": ["rules", "ignore", "mcp", "commands", "skills"],
-  "use-cases": ["development"]
+  "profiles": ["development:frontend"]
 }
 ```
 
@@ -459,7 +507,7 @@ amgr repo list --verbose    # Show orphaned directories
   ],
   "targets": ["claudecode", "cursor", "copilot"],
   "features": ["rules", "ignore", "mcp", "commands", "subagents", "skills"],
-  "use-cases": ["development"],
+  "profiles": ["development:*"],
   "options": {
     "simulateCommands": true,
     "modularMcp": true
@@ -475,7 +523,7 @@ amgr repo list --verbose    # Show orphaned directories
   ],
   "targets": ["claudecode"],
   "features": ["rules", "commands", "skills"],
-  "use-cases": ["writing"]
+  "profiles": ["writing"]
 }
 ```
 
@@ -487,7 +535,7 @@ amgr repo list --verbose    # Show orphaned directories
   ],
   "targets": ["claudecode", "cursor"],
   "features": ["rules", "ignore", "mcp", "commands", "skills"],
-  "use-cases": ["development", "writing"]
+  "profiles": ["development:frontend", "writing"]
 }
 ```
 
@@ -501,8 +549,9 @@ amgr repo list --verbose    # Show orphaned directories
            ▼
 ┌──────────────────────────────────────────┐
 │  1. Parse Configuration                   │
-│     - Read targets, features, use-cases  │
+│     - Read targets, features, profiles   │
 │     - Read .amgr/amgr-lock.json (if exists)│
+│     - Expand wildcards (e.g., dev:* → dev:frontend, dev:backend)│
 └──────────────────────────────────────────┘
            │
            ▼
@@ -517,9 +566,12 @@ amgr repo list --verbose    # Show orphaned directories
 ┌──────────────────────────────────────────┐
 │  3. Compose Content                       │
 │     a. Copy shared/ content               │
-│        (filtered by use-cases frontmatter)│
-│     b. Overlay use-case specific content  │
-│        (in order, later overrides earlier)│
+│        (filtered by profiles frontmatter) │
+│     b. For nested profiles:               │
+│        - Copy parent/_shared/ content     │
+│        - Overlay sub-profile content      │
+│     c. For flat profiles:                 │
+│        - Overlay profile content directly │
 └──────────────────────────────────────────┘
            │
            ▼
@@ -557,7 +609,43 @@ amgr repo list --verbose    # Show orphaned directories
 
 ### Directory Structure
 
-**Source Repository (amgr repo):**
+**Source Repository (amgr repo) - New Structure with Profiles:**
+```
+my-agents/
+├── repo.json                  # Repository manifest (required)
+├── shared/                    # Global shared (all profiles)
+│   ├── rules/
+│   │   └── tone.md           # profiles: [development, writing, development:frontend]
+│   ├── commands/
+│   ├── skills/
+│   ├── subagents/
+│   ├── mcp.json
+│   └── .aiignore
+│
+├── development/               # Nested profile (has sub-profiles)
+│   ├── _shared/               # Development-level shared
+│   │   ├── rules/
+│   │   │   └── coding.md     # profiles: [frontend, backend] (scoped to development:*)
+│   │   ├── commands/
+│   │   ├── skills/
+│   │   └── subagents/
+│   │
+│   ├── frontend/             # Sub-profile: development:frontend
+│   │   └── .rulesync/
+│   │       ├── rules/
+│   │       ├── commands/
+│   │       └── ...
+│   │
+│   └── backend/              # Sub-profile: development:backend
+│       └── .rulesync/
+│
+└── writing/                  # Flat profile (no sub-profiles)
+    └── .rulesync/
+        ├── rules/
+        └── ...
+```
+
+**Legacy Source Repository (still supported):**
 ```
 my-agents/
 ├── repo.json                  # Repository manifest (required)
@@ -573,6 +661,10 @@ my-agents/
     ├── writing/
     └── my-custom-usecase/
 ```
+
+**Detection Logic:**
+- If a profile folder contains `.rulesync/` directly → **flat profile**
+- If a profile folder contains sub-folders (excluding `_shared`) → **nested profile with sub-profiles**
 
 **Target Project (after sync):**
 ```
@@ -597,15 +689,36 @@ Shared content is filtered based on frontmatter in markdown files:
 
 ```yaml
 ---
+profiles:
+  - development
+  - development:frontend
+  - writing
+---
+```
+
+**Filtering rules:**
+- Files with matching `profiles` are included
+- Files without `profiles` property are included for all profiles
+- Files with `exclude-from-profiles` property are excluded from those profiles
+
+**Scope-aware filtering:**
+
+| Location | Allowed `profiles:` values | Example |
+|----------|---------------------------|---------|
+| `/shared/rules/file.md` | Any profile or sub-profile | `[development, writing, development:frontend]` |
+| `/development/_shared/rules/file.md` | Only sub-profiles of development | `[frontend, backend]` (NOT `writing`, NOT `development`) |
+| `/development/frontend/.rulesync/` | N/A (no filtering, already scoped) | - |
+
+**Backwards compatibility:**
+The legacy `use-cases` frontmatter key is still supported:
+
+```yaml
+---
 use-cases:
   - development
   - product
 ---
 ```
-
-- Files with matching `use-cases` are included
-- Files without `use-cases` property are included for all use-cases
-- Files with `exclude-from-use-cases` property are excluded from those use-cases
 
 ## Environment Variables
 
@@ -740,10 +853,20 @@ Error: Invalid target 'unknown' in .amgr/config.json.
 Valid targets: claudecode, cursor, copilot, geminicli, cline, codex, opencode
 ```
 
-### Invalid Use-Case
+### Invalid Profile
 ```
-Error: Use-case 'unknown' not found in any configured source.
-Run 'amgr list' to see available use-cases from your sources.
+Error: Profile 'unknown' not found in any configured source.
+Run 'amgr list' to see available profiles from your sources.
+```
+
+### Invalid Sub-Profile
+```
+Error: Sub-profile 'backend' not found under 'development'. Available: frontend, api
+```
+
+### Invalid Profile Format
+```
+Error: Invalid profile "frontend" - did you mean "development:frontend"?
 ```
 
 ### No Sources Configured
@@ -784,7 +907,11 @@ The `.amgr/config.json` file can be validated against the JSON schema:
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
   "type": "object",
-  "required": ["targets", "features", "use-cases"],
+  "required": ["targets", "features"],
+  "anyOf": [
+    { "required": ["profiles"] },
+    { "required": ["use-cases"] }
+  ],
   "properties": {
     "sources": {
       "type": "array",
@@ -821,11 +948,18 @@ The `.amgr/config.json` file can be validated against the JSON schema:
       },
       "minItems": 1
     },
+    "profiles": {
+      "type": "array",
+      "description": "Profile identifiers. Supports flat profiles, nested sub-profiles, and wildcards.",
+      "items": {
+        "type": "string",
+        "pattern": "^[a-z][a-z0-9-]*(:([a-z][a-z0-9-]*|\\*))?$"
+      }
+    },
     "use-cases": {
       "type": "array",
-      "description": "Use-case identifiers. Valid values come from configured sources.",
-      "items": { "type": "string" },
-      "minItems": 1
+      "description": "DEPRECATED: Use 'profiles' instead. Use-case identifiers.",
+      "items": { "type": "string" }
     },
     "options": {
       "type": "object",
