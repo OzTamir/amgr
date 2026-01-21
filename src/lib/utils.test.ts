@@ -8,6 +8,7 @@ import {
   formatFileList,
   createLogger,
   isVerbose,
+  isCloudSyncedPath,
 } from './utils.js';
 import {
   createTempDir,
@@ -384,6 +385,43 @@ Content`
 
       process.env['AMGR_VERBOSE'] = '1';
       expect(isVerbose()).toBe(false);
+    });
+  });
+
+  describe('isCloudSyncedPath', () => {
+    it.each([
+      {
+        path: '/Users/test/Library/Mobile Documents/iCloud~md~obsidian/Documents/vault',
+        expected: 'icloud',
+        description: 'iCloud path',
+      },
+      {
+        path: '/Users/test/Dropbox/projects/my-project',
+        expected: 'dropbox',
+        description: 'Dropbox path',
+      },
+      {
+        path: '/Users/test/OneDrive/Documents/work',
+        expected: 'onedrive',
+        description: 'OneDrive path',
+      },
+      {
+        path: '/Users/test/Library/CloudStorage/OneDrive-Personal/Documents',
+        expected: 'onedrive',
+        description: 'OneDrive CloudStorage path',
+      },
+      {
+        path: '/Users/test/Code/my-project',
+        expected: null,
+        description: 'regular path',
+      },
+      {
+        path: '/home/user/projects/app',
+        expected: null,
+        description: 'Linux path',
+      },
+    ] as const)('returns $expected for $description', ({ path, expected }) => {
+      expect(isCloudSyncedPath(path)).toBe(expected);
     });
   });
 });

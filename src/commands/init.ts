@@ -11,7 +11,7 @@ import {
   FEATURE_DESCRIPTIONS,
 } from '../lib/constants.js';
 import { getConfigPath, configExists, normalizeOutputDirPrefix } from '../lib/config.js';
-import { createLogger } from '../lib/utils.js';
+import { createLogger, isCloudSyncedPath } from '../lib/utils.js';
 import {
   parseSource,
   resolveSource,
@@ -106,6 +106,23 @@ export async function init(options: CommandOptions = {}): Promise<void> {
         logger.info('Aborted. Existing config preserved.');
         return;
       }
+    }
+
+    const cloudProvider = isCloudSyncedPath(projectPath);
+    if (cloudProvider) {
+      const providerName =
+        cloudProvider === 'icloud'
+          ? 'iCloud'
+          : cloudProvider === 'dropbox'
+            ? 'Dropbox'
+            : 'OneDrive';
+      logger.warn(`This directory is synced via ${providerName}.`);
+      logger.info(
+        "Running 'amgr sync' in cloud-synced folders works fine by default."
+      );
+      logger.info(
+        "Avoid using 'amgr sync --replace' as it may create duplicate files.\n"
+      );
     }
 
     logger.info('Setting up amgr configuration...\n');
