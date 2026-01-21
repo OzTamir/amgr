@@ -21,7 +21,7 @@ import {
   writeRulesyncConfig,
 } from '../lib/compose.js';
 import { deploy } from '../lib/deploy.js';
-import { createLogger, isVerbose } from '../lib/utils.js';
+import { createLogger, isVerbose, getEffectiveProfiles } from '../lib/utils.js';
 import { resolveSources, getMergedSources } from '../lib/sources.js';
 import { getGlobalSources } from '../lib/global-config.js';
 import type { CommandOptions } from '../types/common.js';
@@ -68,12 +68,12 @@ export async function sync(options: CommandOptions = {}): Promise<void> {
 
     const targets = expandTargets(config.targets);
     const features = config.features;
-    const useCases = config['use-cases'];
+    const profiles = getEffectiveProfiles(config);
     const configOptions = getEffectiveOptions(config);
 
     logger.verbose(`Targets: ${targets.join(', ')}`);
     logger.verbose(`Features: ${features.join(', ')}`);
-    logger.verbose(`Use-cases: ${useCases.join(', ')}`);
+    logger.verbose(`Profiles: ${profiles.join(', ')}`);
 
     const globalSources = getGlobalSources();
     const mergedSources = getMergedSources(config, globalSources);
@@ -86,10 +86,10 @@ export async function sync(options: CommandOptions = {}): Promise<void> {
       );
     }
 
-    if (!useCases || useCases.length === 0) {
+    if (profiles.length === 0) {
       throw new Error(
-        'No use-cases configured in .amgr/config.json.\n' +
-          'Add use-cases after configuring sources, then run "amgr sync" again.'
+        'No profiles configured in .amgr/config.json.\n' +
+          'Add profiles after configuring sources, then run "amgr sync" again.'
       );
     }
 
@@ -119,7 +119,7 @@ export async function sync(options: CommandOptions = {}): Promise<void> {
       }
     }
 
-    const outputGroups = groupUseCasesByOutputDir(useCases, config.outputDirs);
+    const outputGroups = groupUseCasesByOutputDir(profiles, config.outputDirs);
     const baseTempDir = join(tmpdir(), `amgr-${Date.now()}`);
     mkdirSync(baseTempDir, { recursive: true });
     logger.verbose(`Temp directory: ${baseTempDir}`);

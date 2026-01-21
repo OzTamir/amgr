@@ -13,7 +13,7 @@ import {
   configExists,
   normalizeOutputDirPrefix,
 } from '../lib/config.js';
-import { createLogger } from '../lib/utils.js';
+import { createLogger, getEffectiveProfiles } from '../lib/utils.js';
 import {
   resolveSources,
   getCombinedUseCases,
@@ -89,6 +89,7 @@ async function editUseCases(config: AmgrConfig, logger: Logger): Promise<AmgrCon
     return config;
   }
 
+  const currentProfiles = getEffectiveProfiles(config);
   const useCases = (await checkbox({
     message: 'Select use-cases:',
     choices: useCaseNames.map((name) => {
@@ -98,7 +99,7 @@ async function editUseCases(config: AmgrConfig, logger: Logger): Promise<AmgrCon
       return {
         name: `${name} - ${description}${sourceLabel}`,
         value: name,
-        checked: config['use-cases'].includes(name),
+        checked: currentProfiles.includes(name),
       };
     }),
     required: true,
@@ -128,32 +129,32 @@ async function editUseCases(config: AmgrConfig, logger: Logger): Promise<AmgrCon
 }
 
 async function editOutputDirs(config: AmgrConfig, logger: Logger): Promise<AmgrConfig> {
-  const useCases = config['use-cases'];
+  const profiles = getEffectiveProfiles(config);
 
-  if (useCases.length === 0) {
-    logger.warn('No use-cases configured. Add use-cases first.');
+  if (profiles.length === 0) {
+    logger.warn('No profiles configured. Add profiles first.');
     return config;
   }
 
   const currentOutputDirs = config.outputDirs ?? {};
 
   logger.info(
-    '\nSpecify a directory prefix for each use-case (e.g., "docs/" places files in docs/.claude/).'
+    '\nSpecify a directory prefix for each profile (e.g., "docs/" places files in docs/.claude/).'
   );
   logger.info('Leave empty to use the default (project root).\n');
 
   const outputDirs: Record<string, string> = {};
 
-  for (const useCase of useCases) {
-    const currentValue = currentOutputDirs[useCase] ?? '';
+  for (const profile of profiles) {
+    const currentValue = currentOutputDirs[profile] ?? '';
     const dirInput = await input({
-      message: `Output directory for '${useCase}':`,
+      message: `Output directory for '${profile}':`,
       default: currentValue,
     });
 
     const normalized = normalizeOutputDirPrefix(dirInput);
     if (normalized) {
-      outputDirs[useCase] = normalized;
+      outputDirs[profile] = normalized;
     }
   }
 
@@ -215,10 +216,11 @@ async function editOptions(config: AmgrConfig, _logger: Logger): Promise<AmgrCon
 }
 
 function formatCurrentConfig(config: AmgrConfig): string {
+  const profiles = getEffectiveProfiles(config);
   const lines: string[] = [];
   lines.push(`  Targets: ${config.targets.join(', ')}`);
   lines.push(`  Features: ${config.features.join(', ')}`);
-  lines.push(`  Use-cases: ${config['use-cases'].join(', ')}`);
+  lines.push(`  Profiles: ${profiles.join(', ')}`);
 
   if (config.outputDirs && Object.keys(config.outputDirs).length > 0) {
     const outputDirEntries = Object.entries(config.outputDirs)

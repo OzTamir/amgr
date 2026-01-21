@@ -29,9 +29,23 @@ export interface ResolvedSource {
   localPath: string;
 }
 
+/** @deprecated Use ProfileMetadata instead */
 export interface UseCaseMetadata {
   description: string;
   sources: string[];
 }
 
+/** @deprecated Use CombinedProfiles instead */
 export type CombinedUseCases = Record<string, UseCaseMetadata>;
+
+export interface SubProfileMetadata {
+  description: string;
+}
+
+export interface ProfileMetadata {
+  description: string;
+  sources: string[];
+  'sub-profiles'?: Record<string, SubProfileMetadata> | undefined;
+}
+
+export type CombinedProfiles = Record<string, ProfileMetadata>;

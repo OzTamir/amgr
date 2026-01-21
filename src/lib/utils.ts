@@ -140,3 +140,10 @@ export function isCloudSyncedPath(projectPath: string): CloudProvider | null {
 
   return null;
 }
+
+export function getEffectiveProfiles(config: {
+  profiles?: string[] | undefined;
+  'use-cases'?: string[] | undefined;
+}): string[] {
+  return config.profiles ?? config['use-cases'] ?? [];
+}

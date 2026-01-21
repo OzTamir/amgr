@@ -4,7 +4,7 @@ import {
   getConfigPath,
   configExists,
 } from '../lib/config.js';
-import { createLogger } from '../lib/utils.js';
+import { createLogger, getEffectiveProfiles } from '../lib/utils.js';
 import type { CommandOptions } from '../types/common.js';
 
 export async function validate(options: CommandOptions = {}): Promise<void> {
@@ -37,10 +37,11 @@ export async function validate(options: CommandOptions = {}): Promise<void> {
       logger.success('Configuration is valid');
 
       if (options.verbose) {
+        const profiles = getEffectiveProfiles(config);
         console.log('\nConfiguration summary:');
         console.log(`  Targets: ${config.targets.join(', ')}`);
         console.log(`  Features: ${config.features.join(', ')}`);
-        console.log(`  Use-cases: ${config['use-cases'].join(', ')}`);
+        console.log(`  Profiles: ${profiles.join(', ')}`);
         if (config.options) {
           console.log(`  Options: ${JSON.stringify(config.options)}`);
         }

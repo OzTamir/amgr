@@ -2,9 +2,13 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "$id": "https://raw.githubusercontent.com/oztamir/amgr/main/schemas/amgr-repo.schema.json",
   "title": "amgr Repo Configuration",
-  "description": "Schema for amgr repo.json files",
+  "description": "Schema for amgr repo.json files. Supports both legacy 'use-cases' and new 'profiles' fields.",
   "type": "object",
-  "required": ["name", "use-cases"],
+  "required": ["name"],
+  "anyOf": [
+    { "required": ["use-cases"] },
+    { "required": ["profiles"] }
+  ],
   "properties": {
     "$schema": {
       "type": "string",
@@ -30,7 +34,7 @@
     },
     "use-cases": {
       "type": "object",
-      "description": "Registry of available use-cases",
+      "description": "DEPRECATED: Use 'profiles' instead. Registry of available use-cases (flat only).",
       "additionalProperties": {
         "type": "object",
         "required": ["description"],
@@ -38,6 +42,36 @@
           "description": {
             "type": "string",
             "description": "Description of the use-case"
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "profiles": {
+      "type": "object",
+      "description": "Registry of available profiles. Supports both flat profiles and nested profiles with sub-profiles.",
+      "additionalProperties": {
+        "type": "object",
+        "required": ["description"],
+        "properties": {
+          "description": {
+            "type": "string",
+            "description": "Description of the profile"
+          },
+          "sub-profiles": {
+            "type": "object",
+            "description": "Sub-profiles for nested profiles. If present, this is a nested profile with content in {profile}/{sub-profile}/.rulesync/",
+            "additionalProperties": {
+              "type": "object",
+              "required": ["description"],
+              "properties": {
+                "description": {
+                  "type": "string",
+                  "description": "Description of the sub-profile"
+                }
+              },
+              "additionalProperties": false
+            }
           }
         },
         "additionalProperties": false

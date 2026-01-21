@@ -58,7 +58,9 @@ export interface AmgrConfig {
   sources?: Source[] | undefined;
   targets: (Target | '*')[];
   features: Feature[];
-  'use-cases': string[];
+  /** @deprecated Use `profiles` instead */
+  'use-cases'?: string[] | undefined;
+  profiles?: string[] | undefined;
   options?: ConfigOptions | undefined;
   outputDirs?: Record<string, string> | undefined;
 }

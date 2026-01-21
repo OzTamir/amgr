@@ -100,14 +100,26 @@
     },
     "use-cases": {
       "type": "array",
-      "description": "Use-case identifiers from configured sources. Required for sync operations.",
+      "description": "DEPRECATED: Use 'profiles' instead. Use-case identifiers from configured sources.",
       "items": {
         "type": "string"
       },
       "examples": [
         ["development"],
-        ["development", "writing"],
-        ["development", "my-custom-usecase"]
+        ["development", "writing"]
+      ]
+    },
+    "profiles": {
+      "type": "array",
+      "description": "Profile identifiers from configured sources. Supports flat profiles ('writing'), nested sub-profiles ('development:frontend'), wildcards ('development:*'), or bare parent names ('development' = all sub-profiles).",
+      "items": {
+        "type": "string",
+        "pattern": "^[a-z][a-z0-9-]*(:([a-z][a-z0-9-]*|\\*))?$"
+      },
+      "examples": [
+        ["development:frontend", "writing"],
+        ["development:*", "writing"],
+        ["development", "writing"]
       ]
     },
     "options": {

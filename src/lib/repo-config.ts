@@ -96,29 +96,32 @@ export function addUseCaseToRepo(
   description: string
 ): void {
   const config = loadRepoConfig(repoPath);
+  const useCases = config['use-cases'] ?? {};
 
-  if (config['use-cases'][name]) {
+  if (useCases[name]) {
     throw new Error(`Use-case "${name}" already exists in repo.json`);
   }
 
-  config['use-cases'][name] = { description };
+  useCases[name] = { description };
+  config['use-cases'] = useCases;
   saveRepoConfig(repoPath, config);
 }
 
 export function removeUseCaseFromRepo(repoPath: string, name: string): void {
   const config = loadRepoConfig(repoPath);
+  const useCases = config['use-cases'];
 
-  if (!config['use-cases'][name]) {
+  if (!useCases?.[name]) {
     throw new Error(`Use-case "${name}" does not exist in repo.json`);
   }
 
-  delete config['use-cases'][name];
+  delete useCases[name];
   saveRepoConfig(repoPath, config);
 }
 
 export function useCaseExistsInRepo(repoPath: string, name: string): boolean {
   const config = loadRepoConfig(repoPath);
-  return !!config['use-cases'][name];
+  return !!(config['use-cases']?.[name] ?? config.profiles?.[name]);
 }
 
 export function validateRepoStructure(repoPath: string): string[] {
