@@ -232,4 +232,45 @@ describe('sync command', () => {
       cleanupTempDir(repoDir);
     }
   });
+
+  it('does not delete tracked files before deploy by default', async () => {
+    const repoDir = createTempDir();
+    try {
+      createTestRepo(repoDir, ['development']);
+      createTestProject(tempDir, createTestConfig({
+        sources: [{ type: 'local', path: repoDir }],
+        'use-cases': ['development'],
+      }));
+
+      await sync();
+
+      const logCalls = consoleSpy.log.mock.calls.map((c) => c[0]);
+      const hasRemovingMessage = logCalls.some(
+        (msg) =>
+          typeof msg === 'string' && msg.includes('Removing previously tracked')
+      );
+      expect(hasRemovingMessage).toBe(false);
+    } finally {
+      cleanupTempDir(repoDir);
+    }
+  });
+
+  it('deletes tracked files before deploy with --replace flag', async () => {
+    const repoDir = createTempDir();
+    try {
+      createTestRepo(repoDir, ['development']);
+      createTestProject(tempDir, createTestConfig({
+        sources: [{ type: 'local', path: repoDir }],
+        'use-cases': ['development'],
+      }));
+
+      await sync({ replace: true });
+
+      expect(consoleSpy.log).toHaveBeenCalledWith(
+        expect.stringContaining('Synced')
+      );
+    } finally {
+      cleanupTempDir(repoDir);
+    }
+  });
 });

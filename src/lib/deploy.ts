@@ -62,6 +62,8 @@ interface DeployResult {
   deployed: string[];
   skipped: string[];
   conflicts: Conflict[];
+  overwritten: string[];
+  created: string[];
 }
 
 interface DeployOptions {
@@ -88,6 +90,8 @@ export function deploy(options: DeployOptions): DeployResult {
   const deployed: string[] = [];
   const skipped: string[] = [];
   const conflicts: Conflict[] = [];
+  const overwritten: string[] = [];
+  const created: string[] = [];
 
   const targetDirs = getGeneratedTargetDirs(generatedPath, targets);
 
@@ -115,9 +119,16 @@ export function deploy(options: DeployOptions): DeployResult {
         continue;
       }
 
+      const isOverwrite = existsSync(destFile) && trackedFiles.includes(relativeDestPath);
+
       if (dryRun) {
         logger?.info?.(`Would deploy: ${relativeDestPath}`);
         deployed.push(relativeDestPath);
+        if (isOverwrite) {
+          overwritten.push(relativeDestPath);
+        } else {
+          created.push(relativeDestPath);
+        }
       } else {
         try {
           const destDir = join(destDirPath, file, '..');
@@ -125,7 +136,13 @@ export function deploy(options: DeployOptions): DeployResult {
 
           cpSync(sourceFile, destFile);
           deployed.push(relativeDestPath);
-          logger?.verbose?.(`Deployed: ${relativeDestPath}`);
+          if (isOverwrite) {
+            overwritten.push(relativeDestPath);
+            logger?.verbose?.(`Overwritten: ${relativeDestPath}`);
+          } else {
+            created.push(relativeDestPath);
+            logger?.verbose?.(`Created: ${relativeDestPath}`);
+          }
         } catch (e) {
           skipped.push(relativeDestPath);
           const message = e instanceof Error ? e.message : String(e);
@@ -135,7 +152,7 @@ export function deploy(options: DeployOptions): DeployResult {
     }
   }
 
-  return { deployed, skipped, conflicts };
+  return { deployed, skipped, conflicts, overwritten, created };
 }
 
 export function getFilesToDeploy(

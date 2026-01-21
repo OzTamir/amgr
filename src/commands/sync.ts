@@ -12,6 +12,7 @@ import {
 import {
   getTrackedFiles,
   removeTrackedFiles,
+  removeOrphanedFiles,
   writeLockFile,
 } from '../lib/lock.js';
 import {
@@ -59,6 +60,7 @@ export async function sync(options: CommandOptions = {}): Promise<void> {
   const verbose = isVerbose(options);
   const logger = createLogger(verbose);
   const dryRun = options.dryRun ?? false;
+  const replaceMode = options.replace ?? false;
 
   try {
     logger.info('Loading configuration...');
@@ -104,8 +106,8 @@ export async function sync(options: CommandOptions = {}): Promise<void> {
     const trackedFiles = getTrackedFiles(projectPath);
     logger.verbose(`Previously tracked files: ${trackedFiles.length}`);
 
-    if (trackedFiles.length > 0 && !dryRun) {
-      logger.info('Removing previously tracked files...');
+    if (replaceMode && trackedFiles.length > 0 && !dryRun) {
+      logger.info('Removing previously tracked files (--replace mode)...');
       const { removed, failed } = removeTrackedFiles(projectPath, {
         dryRun,
         verbose,
@@ -125,6 +127,8 @@ export async function sync(options: CommandOptions = {}): Promise<void> {
     const allDeployed: string[] = [];
     const allSkipped: string[] = [];
     const allConflicts: { file: string; reason: string }[] = [];
+    const allOverwritten: string[] = [];
+    const allCreated: string[] = [];
 
     try {
       for (let i = 0; i < outputGroups.length; i++) {
@@ -178,7 +182,7 @@ export async function sync(options: CommandOptions = {}): Promise<void> {
         }
 
         logger.info(`Deploying files to ${prefixLabel}...`);
-        const { deployed, skipped, conflicts } = deploy({
+        const { deployed, skipped, conflicts, overwritten, created } = deploy({
           generatedPath: tempDir,
           projectPath,
           targets,
@@ -191,6 +195,29 @@ export async function sync(options: CommandOptions = {}): Promise<void> {
         allDeployed.push(...deployed);
         allSkipped.push(...skipped);
         allConflicts.push(...conflicts);
+        allOverwritten.push(...overwritten);
+        allCreated.push(...created);
+      }
+
+      let orphansRemoved = 0;
+      if (!replaceMode) {
+        const orphanedFiles = trackedFiles.filter((f) => !allDeployed.includes(f));
+        if (orphanedFiles.length > 0) {
+          if (dryRun) {
+            logger.info(`Would remove ${orphanedFiles.length} orphaned files`);
+            orphansRemoved = orphanedFiles.length;
+          } else {
+            logger.info(`Removing ${orphanedFiles.length} orphaned files...`);
+            const { removed, failed } = removeOrphanedFiles(projectPath, orphanedFiles, {
+              dryRun,
+              logger,
+            });
+            orphansRemoved = removed.length;
+            if (failed.length > 0) {
+              logger.warn(`Failed to remove ${failed.length} orphaned files`);
+            }
+          }
+        }
       }
 
       if (!dryRun && allDeployed.length > 0) {
@@ -201,9 +228,27 @@ export async function sync(options: CommandOptions = {}): Promise<void> {
       logger.info('');
       if (dryRun) {
         logger.info('Dry run complete. No changes were made.');
-        logger.info(`Would deploy ${allDeployed.length} files`);
+        logger.info(`Would sync ${allDeployed.length} files`);
+        if (allOverwritten.length > 0) {
+          logger.info(`  Overwrite: ${allOverwritten.length}`);
+        }
+        if (allCreated.length > 0) {
+          logger.info(`  Create: ${allCreated.length}`);
+        }
+        if (orphansRemoved > 0) {
+          logger.info(`  Remove orphans: ${orphansRemoved}`);
+        }
       } else {
         logger.success(`Synced ${allDeployed.length} files`);
+        if (allOverwritten.length > 0) {
+          logger.info(`  Overwritten: ${allOverwritten.length}`);
+        }
+        if (allCreated.length > 0) {
+          logger.info(`  Created: ${allCreated.length}`);
+        }
+        if (orphansRemoved > 0) {
+          logger.info(`  Orphans removed: ${orphansRemoved}`);
+        }
       }
 
       if (allSkipped.length > 0) {

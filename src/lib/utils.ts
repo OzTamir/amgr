@@ -1,4 +1,5 @@
 import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import type { Logger, CommandOptions } from '../types/common.js';
 
 interface FrontmatterResult {
@@ -118,4 +119,24 @@ export function createLogger(verbose = false): Logger {
 
 export function isVerbose(options: CommandOptions = {}): boolean {
   return options.verbose === true || process.env['AMGR_VERBOSE'] === 'true';
+}
+
+export type CloudProvider = 'icloud' | 'dropbox' | 'onedrive';
+
+export function isCloudSyncedPath(projectPath: string): CloudProvider | null {
+  const resolved = resolve(projectPath);
+
+  if (resolved.includes('/Library/Mobile Documents/')) {
+    return 'icloud';
+  }
+
+  if (resolved.includes('/Dropbox/')) {
+    return 'dropbox';
+  }
+
+  if (resolved.includes('/OneDrive/') || resolved.includes('/OneDrive-')) {
+    return 'onedrive';
+  }
+
+  return null;
 }

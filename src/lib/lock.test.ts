@@ -8,6 +8,7 @@ import {
   getTrackedFiles,
   isTrackedFile,
   removeTrackedFiles,
+  removeOrphanedFiles,
   deleteLockFile,
   lockFileExists,
 } from './lock.js';
@@ -232,6 +233,66 @@ describe('lock', () => {
     it('returns true when lock file exists', () => {
       writeLockFile(tempDir, ['file.txt']);
       expect(lockFileExists(tempDir)).toBe(true);
+    });
+  });
+
+  describe('removeOrphanedFiles', () => {
+    it('removes only specified orphaned files', () => {
+      const file1 = join(tempDir, 'keep.txt');
+      const file2 = join(tempDir, 'remove.txt');
+      createTestFile(file1, 'keep');
+      createTestFile(file2, 'remove');
+
+      const { removed, failed } = removeOrphanedFiles(tempDir, ['remove.txt']);
+
+      expect(removed).toEqual(['remove.txt']);
+      expect(failed).toEqual([]);
+      expect(existsSync(file1)).toBe(true);
+      expect(existsSync(file2)).toBe(false);
+    });
+
+    it('cleans up empty directories after removing orphans', () => {
+      const nestedDir = join(tempDir, 'nested', 'dir');
+      mkdirSync(nestedDir, { recursive: true });
+      createTestFile(join(nestedDir, 'orphan.txt'), 'content');
+
+      removeOrphanedFiles(tempDir, ['nested/dir/orphan.txt']);
+
+      expect(existsSync(join(tempDir, 'nested'))).toBe(false);
+    });
+
+    it('handles non-existent files gracefully', () => {
+      const { removed, failed } = removeOrphanedFiles(tempDir, [
+        'does-not-exist.txt',
+      ]);
+
+      expect(removed).toEqual([]);
+      expect(failed).toEqual([]);
+    });
+
+    it('respects dryRun option', () => {
+      const file = join(tempDir, 'orphan.txt');
+      createTestFile(file, 'content');
+      const logger = createMockLogger();
+
+      const { removed } = removeOrphanedFiles(tempDir, ['orphan.txt'], {
+        dryRun: true,
+        logger,
+      });
+
+      expect(removed).toEqual(['orphan.txt']);
+      expect(existsSync(file)).toBe(true);
+      expect(logger.logs.info).toContain('Would remove orphan: orphan.txt');
+    });
+
+    it('logs removed files when logger provided', () => {
+      const file = join(tempDir, 'orphan.txt');
+      createTestFile(file, 'content');
+      const logger = createMockLogger();
+
+      removeOrphanedFiles(tempDir, ['orphan.txt'], { logger });
+
+      expect(logger.logs.verbose).toContain('Removed orphan: orphan.txt');
     });
   });
 });

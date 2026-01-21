@@ -40,6 +40,10 @@ program
   .option('-n, --dry-run', 'Show what would be done without making changes')
   .option('-v, --verbose', 'Enable verbose output')
   .option('-c, --config <path>', 'Use a custom config file path')
+  .option(
+    '--replace',
+    'Delete all tracked files before deploying (may cause conflicts in cloud-synced directories)'
+  )
   .action(sync);
 
 program

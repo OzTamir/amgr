@@ -155,3 +155,39 @@ export function deleteLockFile(projectPath: string): boolean {
 export function lockFileExists(projectPath: string): boolean {
   return existsSync(getLockPath(projectPath));
 }
+
+export function removeOrphanedFiles(
+  projectPath: string,
+  orphanedFiles: string[],
+  options: RemoveOptions = {}
+): RemoveResult {
+  const { dryRun = false, logger } = options;
+  const removed: string[] = [];
+  const failed: Array<{ file: string; error: string }> = [];
+
+  for (const file of orphanedFiles) {
+    const fullPath = join(projectPath, file);
+
+    if (existsSync(fullPath)) {
+      if (dryRun) {
+        logger?.info?.(`Would remove orphan: ${file}`);
+        removed.push(file);
+      } else {
+        try {
+          unlinkSync(fullPath);
+          removed.push(file);
+          logger?.verbose?.(`Removed orphan: ${file}`);
+        } catch (e) {
+          const error = e instanceof Error ? e.message : String(e);
+          failed.push({ file, error });
+        }
+      }
+    }
+  }
+
+  if (!dryRun && orphanedFiles.length > 0) {
+    cleanEmptyDirectories(projectPath, orphanedFiles);
+  }
+
+  return { removed, failed };
+}
