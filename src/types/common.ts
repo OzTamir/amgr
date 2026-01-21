@@ -16,4 +16,5 @@ export interface CommandOptions {
   name?: string | undefined;
   description?: string | undefined;
   author?: string | undefined;
+  replace?: boolean | undefined;
 }

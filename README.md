@@ -104,12 +104,14 @@ Synchronize agent configurations based on `.amgr/config.json`.
 amgr sync
 amgr sync --dry-run      # Preview changes without applying
 amgr sync --verbose      # Show detailed output
+amgr sync --replace      # Delete all tracked files before deploying
 ```
 
 **Options:**
 - `-n, --dry-run` - Show what would be done without making changes
 - `-v, --verbose` - Enable verbose output
 - `-c, --config <path>` - Use a custom config file path
+- `--replace` - Delete all tracked files before deploying (use with caution in cloud-synced directories like iCloud, Dropbox, or OneDrive as it may create duplicate files)
 
 ### `amgr init`
 
