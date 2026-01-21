@@ -10,7 +10,7 @@ import { list } from './commands/list.js';
 import { validate } from './commands/validate.js';
 import { clean } from './commands/clean.js';
 import { detach } from './commands/detach.js';
-import { repoInit, repoAdd, repoRemove, repoList } from './commands/repo.js';
+import { repoInit, repoAdd, repoRemove, repoList, repoMigrate } from './commands/repo.js';
 import {
   sourceAdd,
   sourceRemove,
@@ -118,6 +118,13 @@ repoCommand
   .description('List profiles in the current repository')
   .option('-v, --verbose', 'Show additional details')
   .action(repoList);
+
+repoCommand
+  .command('migrate')
+  .description('Migrate from use-cases structure to profiles structure')
+  .option('-v, --verbose', 'Enable verbose output')
+  .option('-n, --dry-run', 'Show what would be done without making changes')
+  .action(repoMigrate);
 
 const sourceCommand = program
   .command('source')

@@ -420,6 +420,188 @@ export async function repoRemove(
   }
 }
 
+interface RepoMigrateOptions extends CommandOptions {
+  dryRun?: boolean;
+}
+
+export async function repoMigrate(options: RepoMigrateOptions = {}): Promise<void> {
+  const repoPath = process.cwd();
+  const logger = createLogger(options.verbose);
+  const isDryRun = options.dryRun ?? false;
+
+  try {
+    if (!isAmgrRepo(repoPath)) {
+      throw new Error('Not an amgr repo. Run "amgr repo init" first.');
+    }
+
+    const config = loadRepoConfig(repoPath);
+    const useCases = config['use-cases'] ?? {};
+    const existingProfiles = config.profiles ?? {};
+    const useCaseNames = Object.keys(useCases);
+
+    if (useCaseNames.length === 0) {
+      logger.info('No use-cases to migrate. Repository is already using the new profiles structure.');
+      return;
+    }
+
+    const useCasesToMigrate = useCaseNames.filter(name => !existingProfiles[name]);
+    
+    if (useCasesToMigrate.length === 0) {
+      logger.info('All use-cases are already migrated to profiles.');
+      if (!isDryRun) {
+        delete (config as Partial<RepoConfig>)['use-cases'];
+        saveRepoConfig(repoPath, config);
+        logger.success('Removed deprecated "use-cases" field from repo.json');
+      }
+      return;
+    }
+
+    const useCasesDir = join(repoPath, USE_CASES_DIR);
+    const moveOperations: Array<{ from: string; to: string; name: string }> = [];
+    const conflicts: string[] = [];
+
+    for (const name of useCasesToMigrate) {
+      const srcDir = join(useCasesDir, name);
+      const destDir = join(repoPath, name);
+
+      if (!existsSync(srcDir)) {
+        logger.verbose(`Skipping ${name}: no directory at use-cases/${name}/`);
+        continue;
+      }
+
+      if (existsSync(destDir)) {
+        conflicts.push(name);
+        continue;
+      }
+
+      moveOperations.push({ from: srcDir, to: destDir, name });
+    }
+
+    if (conflicts.length > 0) {
+      logger.warn(`\nConflicts detected - the following directories already exist at repo root:`);
+      for (const name of conflicts) {
+        logger.warn(`  ${name}/`);
+      }
+      logger.warn('\nResolve these conflicts manually before migrating.');
+      
+      if (moveOperations.length === 0) {
+        throw new Error('No use-cases can be migrated due to conflicts.');
+      }
+      
+      const continueAnyway = await confirm({
+        message: `Continue migrating ${moveOperations.length} use-case(s) without conflicts?`,
+        default: false,
+      });
+
+      if (!continueAnyway) {
+        logger.info('Aborted.');
+        return;
+      }
+    }
+
+    console.log('\nMigration plan:');
+    console.log('');
+    
+    if (moveOperations.length > 0) {
+      console.log('Directory moves:');
+      for (const op of moveOperations) {
+        console.log(`  use-cases/${op.name}/ → ${op.name}/`);
+      }
+      console.log('');
+    }
+
+    console.log('repo.json changes:');
+    console.log('  - Convert "use-cases" field to "profiles" field');
+    for (const op of moveOperations) {
+      const desc = useCases[op.name]?.description ?? '';
+      console.log(`    "${op.name}": { description: "${desc}" }`);
+    }
+    if (conflicts.length > 0) {
+      console.log(`  - ${conflicts.length} use-case(s) skipped due to conflicts`);
+    }
+    console.log('');
+
+    if (isDryRun) {
+      logger.info('Dry run - no changes made.');
+      return;
+    }
+
+    const confirmMigrate = await confirm({
+      message: 'Proceed with migration?',
+      default: true,
+    });
+
+    if (!confirmMigrate) {
+      logger.info('Aborted.');
+      return;
+    }
+
+    logger.info('\nMigrating...\n');
+
+    for (const op of moveOperations) {
+      const { rename } = await import('node:fs/promises');
+      await rename(op.from, op.to);
+      logger.verbose(`Moved: use-cases/${op.name}/ → ${op.name}/`);
+    }
+
+    const profiles = { ...existingProfiles };
+    for (const op of moveOperations) {
+      const useCase = useCases[op.name];
+      if (useCase) {
+        profiles[op.name] = { description: useCase.description };
+      }
+    }
+    
+    for (const name of useCasesToMigrate) {
+      if (!profiles[name] && useCases[name]) {
+        profiles[name] = { description: useCases[name].description };
+      }
+    }
+
+    config.profiles = profiles;
+    
+    const remainingUseCases = { ...useCases };
+    for (const name of useCasesToMigrate) {
+      delete remainingUseCases[name];
+    }
+    
+    if (Object.keys(remainingUseCases).length === 0) {
+      delete (config as Partial<RepoConfig>)['use-cases'];
+    } else {
+      config['use-cases'] = remainingUseCases;
+    }
+
+    saveRepoConfig(repoPath, config);
+    logger.verbose('Updated repo.json');
+
+    if (existsSync(useCasesDir)) {
+      const remaining = readdirSync(useCasesDir);
+      if (remaining.length === 0) {
+        rmSync(useCasesDir, { recursive: true });
+        logger.verbose('Removed empty use-cases/ directory');
+      } else {
+        logger.info(`Note: use-cases/ directory still contains: ${remaining.join(', ')}`);
+      }
+    }
+
+    logger.info('');
+    logger.success(`Migration complete!`);
+    logger.info(`  Migrated ${moveOperations.length} profile(s)`);
+    if (conflicts.length > 0) {
+      logger.info(`  Skipped ${conflicts.length} profile(s) due to conflicts`);
+    }
+    logger.info('\nRun "amgr repo list" to see the updated structure.');
+  } catch (e) {
+    if (e instanceof Error && e.name === 'ExitPromptError') {
+      logger.info('\nAborted.');
+      return;
+    }
+    const message = e instanceof Error ? e.message : String(e);
+    logger.error(message);
+    process.exit(1);
+  }
+}
+
 export async function repoList(options: CommandOptions = {}): Promise<void> {
   const repoPath = process.cwd();
   const logger = createLogger(options.verbose);
