@@ -8,11 +8,12 @@ import { createLogger } from '../lib/utils.js';
 import { configExists, loadConfig } from '../lib/config.js';
 import {
   resolveSources,
-  getCombinedUseCases,
+  getCombinedProfiles,
   getSourceDisplayName,
   getMergedSources,
   SOURCE_TYPES,
 } from '../lib/sources.js';
+import { getEffectiveProfiles } from '../lib/utils.js';
 import { getGlobalSources } from '../lib/global-config.js';
 import type { CommandOptions } from '../types/common.js';
 import type { Source, ResolvedSource } from '../types/sources.js';
@@ -92,28 +93,43 @@ export async function list(options: CommandOptions = {}): Promise<void> {
   }
 
   const allResolved = [...resolvedGlobal, ...resolvedProject];
-  const combinedUseCases = getCombinedUseCases(allResolved);
-  const useCaseNames = Object.keys(combinedUseCases).sort();
+  const combinedProfiles = getCombinedProfiles(allResolved);
+  const profileNames = Object.keys(combinedProfiles).sort();
 
-  console.log('\nAvailable use-cases:');
-  if (useCaseNames.length === 0) {
+  console.log('\nAvailable profiles:');
+  if (profileNames.length === 0) {
     console.log('  (none)');
     console.log(
-      '\n  Run "amgr repo add <name>" in your source repo to add use-cases.'
+      '\n  Run "amgr repo add <name>" in your source repo to add profiles.'
     );
   } else {
-    for (const name of useCaseNames) {
-      const useCaseData = combinedUseCases[name];
-      if (!useCaseData) continue;
-      const { description, sources } = useCaseData;
+    for (const name of profileNames) {
+      const profileData = combinedProfiles[name];
+      if (!profileData) continue;
+      const { description, sources } = profileData;
       const sourceLabel =
         sources.length > 1 ? ` (${sources.join(', ')})` : ` (${sources[0]})`;
-      console.log(`  ${name.padEnd(20)} - ${description}${sourceLabel}`);
+      
+      const subProfiles = profileData['sub-profiles'];
+      if (subProfiles && Object.keys(subProfiles).length > 0) {
+        console.log(`  ${name.padEnd(20)} - ${description}${sourceLabel}`);
+        const subNames = Object.keys(subProfiles).sort();
+        for (let i = 0; i < subNames.length; i++) {
+          const subName = subNames[i]!;
+          const subData = subProfiles[subName];
+          const isLast = i === subNames.length - 1;
+          const prefix = isLast ? '└─' : '├─';
+          console.log(`    ${prefix} ${subName.padEnd(17)} - ${subData?.description ?? ''}`);
+        }
+      } else {
+        console.log(`  ${name.padEnd(20)} - ${description}${sourceLabel}`);
+      }
     }
   }
 
-  if (config?.['use-cases'] && config['use-cases'].length > 0) {
-    console.log(`\nCurrently selected: ${config['use-cases'].join(', ')}`);
+  const currentProfiles = config ? getEffectiveProfiles(config) : [];
+  if (currentProfiles.length > 0) {
+    console.log(`\nCurrently selected: ${currentProfiles.join(', ')}`);
   }
 
   if (options.verbose) {

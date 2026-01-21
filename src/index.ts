@@ -62,7 +62,7 @@ program
 
 program
   .command('list')
-  .description('List available use-cases from configured sources')
+  .description('List available profiles from configured sources')
   .option('-v, --verbose', 'Show targets and features as well')
   .action(list);
 
@@ -100,21 +100,22 @@ repoCommand
 
 repoCommand
   .command('add <name>')
-  .description('Add a new use-case to the repository')
+  .description('Add a profile to the repository (e.g., "development" or "development:frontend")')
   .option('-v, --verbose', 'Enable verbose output')
-  .option('--description <description>', 'Use-case description')
+  .option('--description <description>', 'Profile description')
+  .option('--nested', 'Create as a nested profile with sub-profiles')
   .action(repoAdd);
 
 repoCommand
   .command('remove <name>')
-  .description('Remove a use-case from the repository')
+  .description('Remove a profile from the repository (e.g., "development" or "development:frontend")')
   .option('-v, --verbose', 'Enable verbose output')
   .option('-f, --force', 'Skip confirmation prompt')
   .action(repoRemove);
 
 repoCommand
   .command('list')
-  .description('List use-cases in the current repository')
+  .description('List profiles in the current repository')
   .option('-v, --verbose', 'Show additional details')
   .action(repoList);
 

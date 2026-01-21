@@ -16,6 +16,10 @@ import {
   getSourceUseCases,
   getCombinedUseCases,
   AMGR_CACHE_DIR,
+  parseProfileSpec,
+  isNestedProfile,
+  getSubProfiles,
+  expandProfiles,
 } from './sources.js';
 import { SOURCE_TYPE } from '../types/sources.js';
 import type { ResolvedSource } from '../types/sources.js';
@@ -420,6 +424,178 @@ describe('sources', () => {
           cleanupTempDir(tempDir2);
         }
       });
+    });
+  });
+
+  describe('parseProfileSpec', () => {
+    it('parses flat profile name', () => {
+      const result = parseProfileSpec('development');
+      expect(result).toEqual({ parent: 'development', sub: null, isWildcard: false });
+    });
+
+    it('parses sub-profile spec', () => {
+      const result = parseProfileSpec('development:frontend');
+      expect(result).toEqual({ parent: 'development', sub: 'frontend', isWildcard: false });
+    });
+
+    it('parses wildcard spec', () => {
+      const result = parseProfileSpec('development:*');
+      expect(result).toEqual({ parent: 'development', sub: null, isWildcard: true });
+    });
+
+    it('handles names with hyphens', () => {
+      const result = parseProfileSpec('my-project:sub-profile');
+      expect(result).toEqual({ parent: 'my-project', sub: 'sub-profile', isWildcard: false });
+    });
+  });
+
+  describe('isNestedProfile', () => {
+    it('returns false when profile not found', () => {
+      const config = { name: 'test', profiles: {} };
+      expect(isNestedProfile('missing', config)).toBe(false);
+    });
+
+    it('returns false for flat profile', () => {
+      const config = { 
+        name: 'test', 
+        profiles: { development: { description: 'Dev' } } 
+      };
+      expect(isNestedProfile('development', config)).toBe(false);
+    });
+
+    it('returns true for nested profile with sub-profiles', () => {
+      const config = { 
+        name: 'test', 
+        profiles: { 
+          development: { 
+            description: 'Dev',
+            'sub-profiles': { frontend: { description: 'Frontend' } }
+          } 
+        } 
+      };
+      expect(isNestedProfile('development', config)).toBe(true);
+    });
+
+    it('returns false for empty sub-profiles', () => {
+      const config = { 
+        name: 'test', 
+        profiles: { 
+          development: { 
+            description: 'Dev',
+            'sub-profiles': {}
+          } 
+        } 
+      };
+      expect(isNestedProfile('development', config)).toBe(false);
+    });
+  });
+
+  describe('getSubProfiles', () => {
+    it('returns empty array when profile not found', () => {
+      const config = { name: 'test', profiles: {} };
+      expect(getSubProfiles('missing', config)).toEqual([]);
+    });
+
+    it('returns empty array for flat profile', () => {
+      const config = { 
+        name: 'test', 
+        profiles: { development: { description: 'Dev' } } 
+      };
+      expect(getSubProfiles('development', config)).toEqual([]);
+    });
+
+    it('returns sub-profile names for nested profile', () => {
+      const config = { 
+        name: 'test', 
+        profiles: { 
+          development: { 
+            description: 'Dev',
+            'sub-profiles': { 
+              frontend: { description: 'Frontend' },
+              backend: { description: 'Backend' }
+            }
+          } 
+        } 
+      };
+      expect(getSubProfiles('development', config)).toEqual(['frontend', 'backend']);
+    });
+  });
+
+  describe('expandProfiles', () => {
+    it('keeps flat profile unchanged', () => {
+      const config = { 
+        name: 'test', 
+        profiles: { writing: { description: 'Writing' } } 
+      };
+      expect(expandProfiles(['writing'], config)).toEqual(['writing']);
+    });
+
+    it('keeps explicit sub-profile unchanged', () => {
+      const config = { 
+        name: 'test', 
+        profiles: { 
+          development: { 
+            description: 'Dev',
+            'sub-profiles': { frontend: { description: 'Frontend' } }
+          } 
+        } 
+      };
+      expect(expandProfiles(['development:frontend'], config)).toEqual(['development:frontend']);
+    });
+
+    it('expands wildcard to all sub-profiles', () => {
+      const config = { 
+        name: 'test', 
+        profiles: { 
+          development: { 
+            description: 'Dev',
+            'sub-profiles': { 
+              frontend: { description: 'Frontend' },
+              backend: { description: 'Backend' }
+            }
+          } 
+        } 
+      };
+      expect(expandProfiles(['development:*'], config)).toEqual([
+        'development:frontend',
+        'development:backend'
+      ]);
+    });
+
+    it('expands parent name to all sub-profiles', () => {
+      const config = { 
+        name: 'test', 
+        profiles: { 
+          development: { 
+            description: 'Dev',
+            'sub-profiles': { 
+              frontend: { description: 'Frontend' },
+              backend: { description: 'Backend' }
+            }
+          } 
+        } 
+      };
+      expect(expandProfiles(['development'], config)).toEqual([
+        'development:frontend',
+        'development:backend'
+      ]);
+    });
+
+    it('handles mixed flat and nested profiles', () => {
+      const config = { 
+        name: 'test', 
+        profiles: { 
+          development: { 
+            description: 'Dev',
+            'sub-profiles': { frontend: { description: 'Frontend' } }
+          },
+          writing: { description: 'Writing' }
+        } 
+      };
+      expect(expandProfiles(['development', 'writing'], config)).toEqual([
+        'development:frontend',
+        'writing'
+      ]);
     });
   });
 });

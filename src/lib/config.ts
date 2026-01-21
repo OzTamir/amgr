@@ -5,12 +5,14 @@ import {
   CONFIG_FILE,
   VALID_TARGETS,
   DEFAULT_OPTIONS,
+  SHARED_SUBDIR,
 } from './constants.js';
-import { validateSources } from './sources.js';
+import { validateSources, parseProfileSpec, getCombinedProfiles } from './sources.js';
 import type { AmgrConfig, ConfigOptions, Target } from '../types/config.js';
-import type { Source } from '../types/sources.js';
+import type { Source, ResolvedSource } from '../types/sources.js';
 import { AmgrConfigSchema } from '../schemas/config.js';
 import { validateWithSchemaGetErrors } from '../schemas/validation.js';
+import { getEffectiveProfiles } from './utils.js';
 
 export function getConfigPath(projectPath: string, customPath?: string): string {
   if (customPath) {
@@ -202,4 +204,179 @@ export function expandTargets(targets: (Target | '*')[]): Target[] {
     return [...VALID_TARGETS];
   }
   return targets.filter((t): t is Target => t !== '*');
+}
+
+const PROFILE_SPEC_REGEX = /^[a-z][a-z0-9-]*(:([a-z][a-z0-9-]*|\*))?$/;
+const RESERVED_PROFILE_NAMES = [SHARED_SUBDIR, 'shared'];
+
+export interface ProfileValidationResult {
+  valid: boolean;
+  errors: string[];
+  warnings: string[];
+}
+
+export function validateProfileSpec(spec: string): ProfileValidationResult {
+  const result: ProfileValidationResult = { valid: true, errors: [], warnings: [] };
+  
+  const parsed = parseProfileSpec(spec);
+  
+  if (RESERVED_PROFILE_NAMES.includes(parsed.parent)) {
+    result.valid = false;
+    result.errors.push(`"${parsed.parent}" is a reserved name and cannot be used as a profile name`);
+    return result;
+  }
+  
+  if (parsed.sub && RESERVED_PROFILE_NAMES.includes(parsed.sub)) {
+    result.valid = false;
+    result.errors.push(`"${parsed.sub}" is a reserved name and cannot be used as a sub-profile name`);
+    return result;
+  }
+  
+  if (!PROFILE_SPEC_REGEX.test(spec)) {
+    result.valid = false;
+    result.errors.push(
+      `Invalid profile spec "${spec}". Must match pattern: lowercase letters, numbers, hyphens, optionally followed by :subprofile or :*`
+    );
+    return result;
+  }
+  
+  return result;
+}
+
+export function validateProfilesExist(
+  profiles: string[],
+  resolvedSources: ResolvedSource[]
+): ProfileValidationResult {
+  const result: ProfileValidationResult = { valid: true, errors: [], warnings: [] };
+  
+  if (resolvedSources.length === 0) {
+    return result;
+  }
+  
+  const combinedProfiles = getCombinedProfiles(resolvedSources);
+  const availableProfiles = Object.keys(combinedProfiles);
+  
+  for (const profileSpec of profiles) {
+    const specResult = validateProfileSpec(profileSpec);
+    if (!specResult.valid) {
+      result.valid = false;
+      result.errors.push(...specResult.errors);
+      continue;
+    }
+    
+    const parsed = parseProfileSpec(profileSpec);
+    
+    if (parsed.isWildcard) {
+      if (!availableProfiles.includes(parsed.parent)) {
+        result.valid = false;
+        result.errors.push(`Profile "${parsed.parent}" not found in configured sources`);
+        
+        const suggestions = findSimilarProfiles(parsed.parent, availableProfiles);
+        if (suggestions.length > 0) {
+          result.errors.push(`  Did you mean: ${suggestions.join(', ')}?`);
+        }
+      } else {
+        const profileData = combinedProfiles[parsed.parent];
+        const subProfiles = profileData?.['sub-profiles'];
+        if (!subProfiles || Object.keys(subProfiles).length === 0) {
+          result.warnings.push(
+            `Profile "${parsed.parent}" has no sub-profiles. "${parsed.parent}:*" is equivalent to "${parsed.parent}".`
+          );
+        }
+      }
+      continue;
+    }
+    
+    if (parsed.sub) {
+      if (!availableProfiles.includes(parsed.parent)) {
+        result.valid = false;
+        result.errors.push(`Parent profile "${parsed.parent}" not found in configured sources`);
+        continue;
+      }
+      
+      const profileData = combinedProfiles[parsed.parent];
+      const subProfiles = profileData?.['sub-profiles'];
+      
+      if (!subProfiles || Object.keys(subProfiles).length === 0) {
+        result.valid = false;
+        result.errors.push(
+          `Profile "${parsed.parent}" has no sub-profiles. Use "${parsed.parent}" instead of "${profileSpec}".`
+        );
+        continue;
+      }
+      
+      if (!subProfiles[parsed.sub]) {
+        result.valid = false;
+        result.errors.push(
+          `Sub-profile "${parsed.sub}" not found under "${parsed.parent}". Available: ${Object.keys(subProfiles).join(', ')}`
+        );
+      }
+    } else {
+      if (!availableProfiles.includes(parsed.parent)) {
+        result.valid = false;
+        result.errors.push(`Profile "${parsed.parent}" not found in configured sources`);
+        
+        const allSubProfiles: string[] = [];
+        for (const [parentName, profileData] of Object.entries(combinedProfiles)) {
+          const subs = profileData['sub-profiles'];
+          if (subs && subs[parsed.parent]) {
+            allSubProfiles.push(`${parentName}:${parsed.parent}`);
+          }
+        }
+        
+        if (allSubProfiles.length > 0) {
+          result.errors.push(`  Did you mean: ${allSubProfiles.join(', ')}?`);
+        } else {
+          const suggestions = findSimilarProfiles(parsed.parent, availableProfiles);
+          if (suggestions.length > 0) {
+            result.errors.push(`  Did you mean: ${suggestions.join(', ')}?`);
+          }
+        }
+      }
+    }
+  }
+  
+  return result;
+}
+
+function findSimilarProfiles(target: string, available: string[]): string[] {
+  return available
+    .filter(p => {
+      const distance = levenshteinDistance(target.toLowerCase(), p.toLowerCase());
+      return distance <= 3;
+    })
+    .slice(0, 3);
+}
+
+function levenshteinDistance(a: string, b: string): number {
+  const matrix: number[][] = [];
+  
+  for (let i = 0; i <= a.length; i++) {
+    matrix[i] = [i];
+  }
+  
+  for (let j = 0; j <= b.length; j++) {
+    matrix[0]![j] = j;
+  }
+  
+  for (let i = 1; i <= a.length; i++) {
+    for (let j = 1; j <= b.length; j++) {
+      const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+      matrix[i]![j] = Math.min(
+        matrix[i - 1]![j]! + 1,
+        matrix[i]![j - 1]! + 1,
+        matrix[i - 1]![j - 1]! + cost
+      );
+    }
+  }
+  
+  return matrix[a.length]![b.length]!;
+}
+
+export function validateConfigProfiles(
+  config: AmgrConfig,
+  resolvedSources: ResolvedSource[]
+): ProfileValidationResult {
+  const profiles = getEffectiveProfiles(config);
+  return validateProfilesExist(profiles, resolvedSources);
 }

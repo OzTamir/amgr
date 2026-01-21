@@ -3,12 +3,15 @@ import { join } from 'node:path';
 import {
   parseFrontmatter,
   shouldIncludeForUseCases,
+  shouldIncludeForProfiles,
+  validateFrontmatterScope,
   parseJsonc,
   readJsoncFile,
   formatFileList,
   createLogger,
   isVerbose,
   isCloudSyncedPath,
+  type FilterContext,
 } from './utils.js';
 import {
   createTempDir,
@@ -210,6 +213,358 @@ Content`
       );
 
       expect(shouldIncludeForUseCases(filePath, ['development'])).toBe(false);
+    });
+  });
+
+  describe('shouldIncludeForProfiles', () => {
+    let tempDir: string;
+
+    beforeEach(() => {
+      tempDir = createTempDir();
+    });
+
+    afterEach(() => {
+      cleanupTempDir(tempDir);
+    });
+
+    describe('global scope (/shared/)', () => {
+      it('includes file when no frontmatter present', () => {
+        const filePath = join(tempDir, 'test.md');
+        createTestFile(filePath, '# No frontmatter');
+
+        const context: FilterContext = {
+          targetProfiles: ['development:frontend'],
+          currentScope: 'global',
+        };
+        expect(shouldIncludeForProfiles(filePath, context)).toBe(true);
+      });
+
+      it('includes file when profiles match exactly', () => {
+        const filePath = join(tempDir, 'test.md');
+        createTestFile(
+          filePath,
+          `---
+profiles: [development:frontend]
+---
+Content`
+        );
+
+        const context: FilterContext = {
+          targetProfiles: ['development:frontend'],
+          currentScope: 'global',
+        };
+        expect(shouldIncludeForProfiles(filePath, context)).toBe(true);
+      });
+
+      it('includes file when parent profile matches nested target', () => {
+        const filePath = join(tempDir, 'test.md');
+        createTestFile(
+          filePath,
+          `---
+profiles: [development]
+---
+Content`
+        );
+
+        const context: FilterContext = {
+          targetProfiles: ['development:frontend'],
+          currentScope: 'global',
+        };
+        expect(shouldIncludeForProfiles(filePath, context)).toBe(true);
+      });
+
+      it('excludes file when profiles do not match', () => {
+        const filePath = join(tempDir, 'test.md');
+        createTestFile(
+          filePath,
+          `---
+profiles: [writing]
+---
+Content`
+        );
+
+        const context: FilterContext = {
+          targetProfiles: ['development:frontend'],
+          currentScope: 'global',
+        };
+        expect(shouldIncludeForProfiles(filePath, context)).toBe(false);
+      });
+
+      it('supports legacy use-cases key', () => {
+        const filePath = join(tempDir, 'test.md');
+        createTestFile(
+          filePath,
+          `---
+use-cases: [development]
+---
+Content`
+        );
+
+        const context: FilterContext = {
+          targetProfiles: ['development:frontend'],
+          currentScope: 'global',
+        };
+        expect(shouldIncludeForProfiles(filePath, context)).toBe(true);
+      });
+
+      it('excludes file via exclude-from-profiles', () => {
+        const filePath = join(tempDir, 'test.md');
+        createTestFile(
+          filePath,
+          `---
+exclude-from-profiles: [development]
+---
+Content`
+        );
+
+        const context: FilterContext = {
+          targetProfiles: ['development:frontend'],
+          currentScope: 'global',
+        };
+        expect(shouldIncludeForProfiles(filePath, context)).toBe(false);
+      });
+
+      it('supports legacy exclude-from-use-cases key', () => {
+        const filePath = join(tempDir, 'test.md');
+        createTestFile(
+          filePath,
+          `---
+exclude-from-use-cases: [development]
+---
+Content`
+        );
+
+        const context: FilterContext = {
+          targetProfiles: ['development:frontend'],
+          currentScope: 'global',
+        };
+        expect(shouldIncludeForProfiles(filePath, context)).toBe(false);
+      });
+    });
+
+    describe('parent scope (/parent/_shared/)', () => {
+      it('includes file when sub-profile matches', () => {
+        const filePath = join(tempDir, 'test.md');
+        createTestFile(
+          filePath,
+          `---
+profiles: [frontend]
+---
+Content`
+        );
+
+        const context: FilterContext = {
+          targetProfiles: ['development:frontend'],
+          currentScope: 'development',
+        };
+        expect(shouldIncludeForProfiles(filePath, context)).toBe(true);
+      });
+
+      it('excludes file when sub-profile does not match', () => {
+        const filePath = join(tempDir, 'test.md');
+        createTestFile(
+          filePath,
+          `---
+profiles: [backend]
+---
+Content`
+        );
+
+        const context: FilterContext = {
+          targetProfiles: ['development:frontend'],
+          currentScope: 'development',
+        };
+        expect(shouldIncludeForProfiles(filePath, context)).toBe(false);
+      });
+
+      it('excludes file when scope parent does not match', () => {
+        const filePath = join(tempDir, 'test.md');
+        createTestFile(
+          filePath,
+          `---
+profiles: [frontend]
+---
+Content`
+        );
+
+        const context: FilterContext = {
+          targetProfiles: ['development:frontend'],
+          currentScope: 'writing',
+        };
+        expect(shouldIncludeForProfiles(filePath, context)).toBe(false);
+      });
+
+      it('excludes file with full profile spec in scoped context', () => {
+        const filePath = join(tempDir, 'test.md');
+        createTestFile(
+          filePath,
+          `---
+profiles: [development:frontend]
+---
+Content`
+        );
+
+        const context: FilterContext = {
+          targetProfiles: ['development:frontend'],
+          currentScope: 'development',
+        };
+        expect(shouldIncludeForProfiles(filePath, context)).toBe(false);
+      });
+
+      it('handles multiple sub-profiles', () => {
+        const filePath = join(tempDir, 'test.md');
+        createTestFile(
+          filePath,
+          `---
+profiles: [frontend, backend]
+---
+Content`
+        );
+
+        const frontendContext: FilterContext = {
+          targetProfiles: ['development:frontend'],
+          currentScope: 'development',
+        };
+        const backendContext: FilterContext = {
+          targetProfiles: ['development:backend'],
+          currentScope: 'development',
+        };
+        expect(shouldIncludeForProfiles(filePath, frontendContext)).toBe(true);
+        expect(shouldIncludeForProfiles(filePath, backendContext)).toBe(true);
+      });
+    });
+
+    describe('flat profiles', () => {
+      it('matches flat profile in global scope', () => {
+        const filePath = join(tempDir, 'test.md');
+        createTestFile(
+          filePath,
+          `---
+profiles: [writing]
+---
+Content`
+        );
+
+        const context: FilterContext = {
+          targetProfiles: ['writing'],
+          currentScope: 'global',
+        };
+        expect(shouldIncludeForProfiles(filePath, context)).toBe(true);
+      });
+
+      it('excludes flat profile when targeting different profile', () => {
+        const filePath = join(tempDir, 'test.md');
+        createTestFile(
+          filePath,
+          `---
+profiles: [writing]
+---
+Content`
+        );
+
+        const context: FilterContext = {
+          targetProfiles: ['development'],
+          currentScope: 'global',
+        };
+        expect(shouldIncludeForProfiles(filePath, context)).toBe(false);
+      });
+    });
+  });
+
+  describe('validateFrontmatterScope', () => {
+    let tempDir: string;
+
+    beforeEach(() => {
+      tempDir = createTempDir();
+    });
+
+    afterEach(() => {
+      cleanupTempDir(tempDir);
+    });
+
+    it('returns valid for global scope', () => {
+      const filePath = join(tempDir, 'test.md');
+      createTestFile(
+        filePath,
+        `---
+profiles: [development:frontend, writing]
+---
+Content`
+      );
+
+      const result = validateFrontmatterScope(filePath, 'global', []);
+      expect(result.valid).toBe(true);
+      expect(result.warnings).toEqual([]);
+    });
+
+    it('returns valid for file without frontmatter', () => {
+      const filePath = join(tempDir, 'test.md');
+      createTestFile(filePath, '# No frontmatter');
+
+      const result = validateFrontmatterScope(filePath, 'development', ['frontend', 'backend']);
+      expect(result.valid).toBe(true);
+    });
+
+    it('returns valid for correct sub-profile references', () => {
+      const filePath = join(tempDir, 'test.md');
+      createTestFile(
+        filePath,
+        `---
+profiles: [frontend, backend]
+---
+Content`
+      );
+
+      const result = validateFrontmatterScope(filePath, 'development', ['frontend', 'backend']);
+      expect(result.valid).toBe(true);
+      expect(result.warnings).toEqual([]);
+    });
+
+    it('warns when using full profile spec in scoped context', () => {
+      const filePath = join(tempDir, 'test.md');
+      createTestFile(
+        filePath,
+        `---
+profiles: [development:frontend]
+---
+Content`
+      );
+
+      const result = validateFrontmatterScope(filePath, 'development', ['frontend', 'backend']);
+      expect(result.valid).toBe(false);
+      expect(result.warnings.length).toBe(1);
+      expect(result.warnings[0]).toContain('full profile spec');
+    });
+
+    it('warns when referencing profile outside scope', () => {
+      const filePath = join(tempDir, 'test.md');
+      createTestFile(
+        filePath,
+        `---
+profiles: [writing]
+---
+Content`
+      );
+
+      const result = validateFrontmatterScope(filePath, 'development', ['frontend', 'backend']);
+      expect(result.valid).toBe(false);
+      expect(result.warnings.length).toBe(1);
+      expect(result.warnings[0]).toContain('outside of "development" scope');
+    });
+
+    it('collects multiple warnings', () => {
+      const filePath = join(tempDir, 'test.md');
+      createTestFile(
+        filePath,
+        `---
+profiles: [development:frontend, writing]
+---
+Content`
+      );
+
+      const result = validateFrontmatterScope(filePath, 'development', ['frontend', 'backend']);
+      expect(result.valid).toBe(false);
+      expect(result.warnings.length).toBe(2);
     });
   });
 

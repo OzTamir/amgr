@@ -5,6 +5,8 @@ import {
   getAvailableUseCases,
   getAvailableUseCasesFromSources,
   compose,
+  composeWithProfiles,
+  detectProfileType,
   generateRulesyncConfig,
   writeRulesyncConfig,
 } from './compose.js';
@@ -234,6 +236,220 @@ describe('compose', () => {
 
       expect(existsSync(configPath)).toBe(true);
       expect(configPath).toBe(join(outputDir, 'rulesync.jsonc'));
+    });
+  });
+
+  describe('detectProfileType', () => {
+    it('returns flat when profile has .rulesync directory', () => {
+      const sourceDir = createTempDir();
+      try {
+        mkdirSync(join(sourceDir, 'writing', '.rulesync'), { recursive: true });
+        
+        expect(detectProfileType(sourceDir, 'writing')).toBe('flat');
+      } finally {
+        cleanupTempDir(sourceDir);
+      }
+    });
+
+    it('returns nested when profile has subdirectories (not _shared or .rulesync)', () => {
+      const sourceDir = createTempDir();
+      try {
+        mkdirSync(join(sourceDir, 'development', 'frontend', '.rulesync'), { recursive: true });
+        mkdirSync(join(sourceDir, 'development', 'backend', '.rulesync'), { recursive: true });
+        
+        expect(detectProfileType(sourceDir, 'development')).toBe('nested');
+      } finally {
+        cleanupTempDir(sourceDir);
+      }
+    });
+
+    it('returns flat for legacy use-cases directory', () => {
+      const sourceDir = createTempDir();
+      try {
+        createTestRepo(sourceDir, ['development']);
+        
+        expect(detectProfileType(sourceDir, 'development')).toBe('flat');
+      } finally {
+        cleanupTempDir(sourceDir);
+      }
+    });
+
+    it('ignores _shared when detecting profile type', () => {
+      const sourceDir = createTempDir();
+      try {
+        mkdirSync(join(sourceDir, 'development', '_shared', 'rules'), { recursive: true });
+        mkdirSync(join(sourceDir, 'development', 'frontend', '.rulesync'), { recursive: true });
+        
+        expect(detectProfileType(sourceDir, 'development')).toBe('nested');
+      } finally {
+        cleanupTempDir(sourceDir);
+      }
+    });
+  });
+
+  describe('composeWithProfiles', () => {
+    it('creates output directory structure', () => {
+      const sourceDir = createTempDir();
+      const outputDir = join(tempDir, 'output');
+
+      try {
+        createTestRepo(sourceDir, ['writing']);
+
+        composeWithProfiles({
+          sourcePaths: [sourceDir],
+          profiles: ['writing'],
+          outputPath: outputDir,
+        });
+
+        expect(existsSync(join(outputDir, '.rulesync'))).toBe(true);
+      } finally {
+        cleanupTempDir(sourceDir);
+      }
+    });
+
+    it('copies global shared content with profile filtering', () => {
+      const sourceDir = createTempDir();
+      const outputDir = join(tempDir, 'output');
+
+      try {
+        createTestRepo(sourceDir, ['development', 'writing']);
+        createTestFile(
+          join(sourceDir, 'shared', 'rules', 'all.md'),
+          '# For all'
+        );
+        createTestFile(
+          join(sourceDir, 'shared', 'rules', 'dev-only.md'),
+          `---
+profiles: [development]
+---
+# Dev only`
+        );
+
+        composeWithProfiles({
+          sourcePaths: [sourceDir],
+          profiles: ['writing'],
+          outputPath: outputDir,
+        });
+
+        expect(existsSync(join(outputDir, '.rulesync', 'rules', 'all.md'))).toBe(true);
+        expect(existsSync(join(outputDir, '.rulesync', 'rules', 'dev-only.md'))).toBe(false);
+      } finally {
+        cleanupTempDir(sourceDir);
+      }
+    });
+
+    it('copies flat profile content from legacy use-cases directory', () => {
+      const sourceDir = createTempDir();
+      const outputDir = join(tempDir, 'output');
+
+      try {
+        createTestRepo(sourceDir, ['writing']);
+        createTestFile(
+          join(sourceDir, 'use-cases', 'writing', '.rulesync', 'rules', 'writing.md'),
+          '# Writing Rules'
+        );
+
+        composeWithProfiles({
+          sourcePaths: [sourceDir],
+          profiles: ['writing'],
+          outputPath: outputDir,
+        });
+
+        expect(existsSync(join(outputDir, '.rulesync', 'rules', 'writing.md'))).toBe(true);
+      } finally {
+        cleanupTempDir(sourceDir);
+      }
+    });
+
+    it('copies nested profile content with parent shared filtering', () => {
+      const sourceDir = createTempDir();
+      const outputDir = join(tempDir, 'output');
+
+      try {
+        mkdirSync(join(sourceDir, 'shared', 'rules'), { recursive: true });
+        mkdirSync(join(sourceDir, 'development', '_shared', 'rules'), { recursive: true });
+        mkdirSync(join(sourceDir, 'development', 'frontend', '.rulesync', 'rules'), { recursive: true });
+        mkdirSync(join(sourceDir, 'development', 'backend', '.rulesync', 'rules'), { recursive: true });
+        
+        createTestFile(join(sourceDir, 'repo.json'), JSON.stringify({ name: 'test', 'use-cases': {} }));
+        createTestFile(
+          join(sourceDir, 'shared', 'rules', 'global.md'),
+          '# Global'
+        );
+        createTestFile(
+          join(sourceDir, 'development', '_shared', 'rules', 'coding.md'),
+          `---
+profiles: [frontend, backend]
+---
+# Coding for both`
+        );
+        createTestFile(
+          join(sourceDir, 'development', '_shared', 'rules', 'frontend-only.md'),
+          `---
+profiles: [frontend]
+---
+# Frontend only`
+        );
+        createTestFile(
+          join(sourceDir, 'development', 'frontend', '.rulesync', 'rules', 'react.md'),
+          '# React Rules'
+        );
+        createTestFile(
+          join(sourceDir, 'development', 'backend', '.rulesync', 'rules', 'api.md'),
+          '# API Rules'
+        );
+
+        composeWithProfiles({
+          sourcePaths: [sourceDir],
+          profiles: ['development:frontend'],
+          outputPath: outputDir,
+        });
+
+        expect(existsSync(join(outputDir, '.rulesync', 'rules', 'global.md'))).toBe(true);
+        expect(existsSync(join(outputDir, '.rulesync', 'rules', 'coding.md'))).toBe(true);
+        expect(existsSync(join(outputDir, '.rulesync', 'rules', 'frontend-only.md'))).toBe(true);
+        expect(existsSync(join(outputDir, '.rulesync', 'rules', 'react.md'))).toBe(true);
+        expect(existsSync(join(outputDir, '.rulesync', 'rules', 'api.md'))).toBe(false);
+      } finally {
+        cleanupTempDir(sourceDir);
+      }
+    });
+
+    it('supports legacy use-cases frontmatter key', () => {
+      const sourceDir = createTempDir();
+      const outputDir = join(tempDir, 'output');
+
+      try {
+        createTestRepo(sourceDir, ['development']);
+        createTestFile(
+          join(sourceDir, 'shared', 'rules', 'dev.md'),
+          `---
+use-cases: [development]
+---
+# Dev rules`
+        );
+
+        composeWithProfiles({
+          sourcePaths: [sourceDir],
+          profiles: ['development'],
+          outputPath: outputDir,
+        });
+
+        expect(existsSync(join(outputDir, '.rulesync', 'rules', 'dev.md'))).toBe(true);
+      } finally {
+        cleanupTempDir(sourceDir);
+      }
+    });
+
+    it('throws when no sources provided', () => {
+      const outputDir = join(tempDir, 'output');
+
+      expect(() =>
+        composeWithProfiles({
+          profiles: ['development'],
+          outputPath: outputDir,
+        })
+      ).toThrow('No source paths provided');
     });
   });
 });

@@ -17,7 +17,7 @@ import {
   resolveSource,
   resolveSources,
   getSourceDisplayName,
-  getCombinedUseCases,
+  getCombinedProfiles,
 } from '../lib/sources.js';
 import { getGlobalSources } from '../lib/global-config.js';
 import type { CommandOptions, Logger } from '../types/common.js';
@@ -68,26 +68,53 @@ async function promptForSources(
   return { sources, resolvedSources };
 }
 
-function getUseCaseChoices(
+function getProfileChoices(
   resolvedSources: ResolvedSource[]
 ): Array<{ name: string; value: string; checked: boolean }> {
   if (resolvedSources.length === 0) {
     return [];
   }
 
-  const combined = getCombinedUseCases(resolvedSources);
-  const useCaseNames = Object.keys(combined).sort();
+  const combined = getCombinedProfiles(resolvedSources);
+  const profileNames = Object.keys(combined).sort();
+  const choices: Array<{ name: string; value: string; checked: boolean }> = [];
 
-  return useCaseNames.map((name) => {
-    const { description, sources } = combined[name]!;
+  for (const name of profileNames) {
+    const profileData = combined[name];
+    if (!profileData) continue;
+    const { description, sources } = profileData;
     const sourceLabel =
       sources.length > 1 ? ` (${sources.join(', ')})` : ` (${sources[0]})`;
-    return {
-      name: `${name} - ${description}${sourceLabel}`,
-      value: name,
-      checked: name === 'development',
-    };
-  });
+    
+    const subProfiles = profileData['sub-profiles'];
+    if (subProfiles && Object.keys(subProfiles).length > 0) {
+      const subNames = Object.keys(subProfiles).sort();
+      choices.push({
+        name: `${name} - ${description}${sourceLabel}`,
+        value: `${name}:*`,
+        checked: name === 'development',
+      });
+      for (let i = 0; i < subNames.length; i++) {
+        const subName = subNames[i]!;
+        const subData = subProfiles[subName];
+        const isLast = i === subNames.length - 1;
+        const prefix = isLast ? '  └─' : '  ├─';
+        choices.push({
+          name: `${prefix} ${subName} - ${subData?.description ?? ''}`,
+          value: `${name}:${subName}`,
+          checked: false,
+        });
+      }
+    } else {
+      choices.push({
+        name: `${name} - ${description}${sourceLabel}`,
+        value: name,
+        checked: name === 'development',
+      });
+    }
+  }
+
+  return choices;
 }
 
 export async function init(options: CommandOptions = {}): Promise<void> {
@@ -238,19 +265,19 @@ export async function init(options: CommandOptions = {}): Promise<void> {
       process.exit(1);
     }
 
-    const useCaseChoices = getUseCaseChoices(allResolvedSources);
+    const profileChoices = getProfileChoices(allResolvedSources);
 
-    if (useCaseChoices.length === 0) {
-      logger.error('No use-cases found in configured sources.');
+    if (profileChoices.length === 0) {
+      logger.error('No profiles found in configured sources.');
       logger.error(
-        'Add use-cases to your source repos with "amgr repo add <name>".'
+        'Add profiles to your source repos with "amgr repo add <name>".'
       );
       process.exit(1);
     }
 
     const useCases = (await checkbox({
-      message: 'Select use-cases:',
-      choices: useCaseChoices,
+      message: 'Select profiles:',
+      choices: profileChoices,
       required: true,
     })) as string[];
 
