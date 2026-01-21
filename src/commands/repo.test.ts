@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { join } from 'node:path';
-import { existsSync } from 'node:fs';
-import { repoInit, repoAdd, repoRemove, repoList } from './repo.js';
+import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
+import { repoInit, repoAdd, repoRemove, repoList, repoMigrate } from './repo.js';
 import { loadRepoConfig } from '../lib/repo-config.js';
 import {
   createTempDir,
@@ -208,6 +208,94 @@ describe('repo commands', () => {
 
       expect(consoleSpy.log).toHaveBeenCalledWith(
         expect.stringContaining('(none)')
+      );
+    });
+  });
+
+  describe('repoMigrate', () => {
+    it('migrates use-cases to profiles with directory moves', async () => {
+      createTestRepo(tempDir, ['development', 'writing']);
+      vi.mocked(confirm).mockResolvedValue(true);
+
+      await repoMigrate();
+
+      const config = loadRepoConfig(tempDir);
+      expect(config.profiles).toHaveProperty('development');
+      expect(config.profiles).toHaveProperty('writing');
+      expect(config['use-cases']).toBeUndefined();
+      expect(existsSync(join(tempDir, 'development'))).toBe(true);
+      expect(existsSync(join(tempDir, 'writing'))).toBe(true);
+      expect(existsSync(join(tempDir, 'use-cases', 'development'))).toBe(false);
+      expect(existsSync(join(tempDir, 'use-cases', 'writing'))).toBe(false);
+    });
+
+    it('shows dry-run plan without making changes', async () => {
+      createTestRepo(tempDir, ['development']);
+
+      await repoMigrate({ dryRun: true });
+
+      const config = loadRepoConfig(tempDir);
+      expect(config['use-cases']).toHaveProperty('development');
+      expect(config.profiles).toBeUndefined();
+      expect(existsSync(join(tempDir, 'use-cases', 'development'))).toBe(true);
+      expect(existsSync(join(tempDir, 'development'))).toBe(false);
+    });
+
+    it('skips migration when no use-cases exist', async () => {
+      writeFileSync(
+        join(tempDir, 'repo.json'),
+        JSON.stringify({
+          name: 'test-repo',
+          profiles: { development: { description: 'Dev' } },
+        })
+      );
+
+      await repoMigrate();
+
+      expect(consoleSpy.log).toHaveBeenCalledWith(
+        expect.stringContaining('No use-cases to migrate')
+      );
+    });
+
+    it('detects conflicts when directory exists at root', async () => {
+      createTestRepo(tempDir, ['development']);
+      mkdirSync(join(tempDir, 'development'), { recursive: true });
+      vi.mocked(confirm).mockResolvedValue(false);
+
+      await repoMigrate();
+
+      expect(consoleSpy.warn).toHaveBeenCalledWith(
+        expect.stringContaining('Conflicts detected')
+      );
+    });
+
+    it('aborts when user declines confirmation', async () => {
+      createTestRepo(tempDir, ['development']);
+      vi.mocked(confirm).mockResolvedValue(false);
+
+      await repoMigrate();
+
+      const config = loadRepoConfig(tempDir);
+      expect(config['use-cases']).toHaveProperty('development');
+      expect(consoleSpy.log).toHaveBeenCalledWith(
+        expect.stringContaining('Aborted')
+      );
+    });
+
+    it('removes empty use-cases directory after migration', async () => {
+      createTestRepo(tempDir, ['development']);
+      vi.mocked(confirm).mockResolvedValue(true);
+
+      await repoMigrate();
+
+      expect(existsSync(join(tempDir, 'use-cases'))).toBe(false);
+    });
+
+    it('shows error when not in a repo', async () => {
+      await repoMigrate();
+
+      expect(consoleSpy.error).toHaveBeenCalledWith(
+        expect.stringContaining('Not an amgr repo')
       );
     });
   });

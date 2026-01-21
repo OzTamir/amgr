@@ -60,7 +60,7 @@ describe('list command', () => {
     );
   });
 
-  it('lists use-cases from local source', async () => {
+  it('lists profiles from local source', async () => {
     const repoDir = createTempDir();
     try {
       createTestRepo(repoDir, ['development', 'writing']);
@@ -71,7 +71,7 @@ describe('list command', () => {
       await list();
 
       expect(consoleSpy.log).toHaveBeenCalledWith(
-        expect.stringContaining('Available use-cases')
+        expect.stringContaining('Available profiles')
       );
       expect(consoleSpy.log).toHaveBeenCalledWith(
         expect.stringContaining('development')

@@ -10,7 +10,7 @@ import { list } from './commands/list.js';
 import { validate } from './commands/validate.js';
 import { clean } from './commands/clean.js';
 import { detach } from './commands/detach.js';
-import { repoInit, repoAdd, repoRemove, repoList } from './commands/repo.js';
+import { repoInit, repoAdd, repoRemove, repoList, repoMigrate } from './commands/repo.js';
 import {
   sourceAdd,
   sourceRemove,
@@ -62,7 +62,7 @@ program
 
 program
   .command('list')
-  .description('List available use-cases from configured sources')
+  .description('List available profiles from configured sources')
   .option('-v, --verbose', 'Show targets and features as well')
   .action(list);
 
@@ -100,23 +100,31 @@ repoCommand
 
 repoCommand
   .command('add <name>')
-  .description('Add a new use-case to the repository')
+  .description('Add a profile to the repository (e.g., "development" or "development:frontend")')
   .option('-v, --verbose', 'Enable verbose output')
-  .option('--description <description>', 'Use-case description')
+  .option('--description <description>', 'Profile description')
+  .option('--nested', 'Create as a nested profile with sub-profiles')
   .action(repoAdd);
 
 repoCommand
   .command('remove <name>')
-  .description('Remove a use-case from the repository')
+  .description('Remove a profile from the repository (e.g., "development" or "development:frontend")')
   .option('-v, --verbose', 'Enable verbose output')
   .option('-f, --force', 'Skip confirmation prompt')
   .action(repoRemove);
 
 repoCommand
   .command('list')
-  .description('List use-cases in the current repository')
+  .description('List profiles in the current repository')
   .option('-v, --verbose', 'Show additional details')
   .action(repoList);
+
+repoCommand
+  .command('migrate')
+  .description('Migrate from use-cases structure to profiles structure')
+  .option('-v, --verbose', 'Enable verbose output')
+  .option('-n, --dry-run', 'Show what would be done without making changes')
+  .action(repoMigrate);
 
 const sourceCommand = program
   .command('source')

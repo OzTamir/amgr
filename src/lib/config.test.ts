@@ -16,6 +16,8 @@ import {
   removeSourceFromConfig,
   getEffectiveOptions,
   expandTargets,
+  validateProfileSpec,
+  validateProfilesExist,
 } from './config.js';
 import { VALID_TARGETS } from '../types/config.js';
 import type { AmgrConfig } from '../types/config.js';
@@ -419,6 +421,69 @@ describe('config', () => {
 
         expect(() => loadAndValidateConfig(tempDir)).toThrow();
       });
+    });
+  });
+
+  describe('validateProfileSpec', () => {
+    it('accepts valid flat profile names', () => {
+      const result = validateProfileSpec('development');
+      expect(result.valid).toBe(true);
+      expect(result.errors).toHaveLength(0);
+    });
+
+    it('accepts valid sub-profile specs', () => {
+      const result = validateProfileSpec('development:frontend');
+      expect(result.valid).toBe(true);
+      expect(result.errors).toHaveLength(0);
+    });
+
+    it('accepts wildcard specs', () => {
+      const result = validateProfileSpec('development:*');
+      expect(result.valid).toBe(true);
+      expect(result.errors).toHaveLength(0);
+    });
+
+    it('accepts names with numbers and hyphens', () => {
+      const result = validateProfileSpec('dev-2024:frontend-v2');
+      expect(result.valid).toBe(true);
+      expect(result.errors).toHaveLength(0);
+    });
+
+    it('rejects specs starting with numbers', () => {
+      const result = validateProfileSpec('2development');
+      expect(result.valid).toBe(false);
+      expect(result.errors.length).toBeGreaterThan(0);
+    });
+
+    it('rejects specs with uppercase letters', () => {
+      const result = validateProfileSpec('Development');
+      expect(result.valid).toBe(false);
+      expect(result.errors.length).toBeGreaterThan(0);
+    });
+
+    it('rejects reserved name _shared', () => {
+      const result = validateProfileSpec('_shared');
+      expect(result.valid).toBe(false);
+      expect(result.errors).toContain('"_shared" is a reserved name and cannot be used as a profile name');
+    });
+
+    it('rejects reserved name shared', () => {
+      const result = validateProfileSpec('shared');
+      expect(result.valid).toBe(false);
+      expect(result.errors).toContain('"shared" is a reserved name and cannot be used as a profile name');
+    });
+
+    it('rejects _shared as sub-profile name', () => {
+      const result = validateProfileSpec('development:_shared');
+      expect(result.valid).toBe(false);
+      expect(result.errors).toContain('"_shared" is a reserved name and cannot be used as a sub-profile name');
+    });
+  });
+
+  describe('validateProfilesExist', () => {
+    it('returns valid result when no sources', () => {
+      const result = validateProfilesExist(['development'], []);
+      expect(result.valid).toBe(true);
     });
   });
 });

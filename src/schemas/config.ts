@@ -26,17 +26,31 @@ export const ConfigOptionsSchema = z
 
 export const OutputDirsSchema = z.record(z.string(), z.string());
 
+const ProfileSpecSchema = z
+  .string()
+  .regex(
+    /^[a-z][a-z0-9-]*(:([a-z][a-z0-9-]*|\*))?$/,
+    'Profile must be lowercase alphanumeric with optional sub-profile (e.g., "writing", "development:frontend", "development:*")'
+  );
+
 export const AmgrConfigSchema = z
   .object({
     $schema: z.string().optional(),
     sources: SourcesArraySchema.optional(),
     targets: z.array(TargetSchema).min(1, 'At least one target is required'),
     features: z.array(FeatureSchema).min(1, 'At least one feature is required'),
-    'use-cases': z.array(z.string()).min(1, 'At least one use-case is required'),
+    'use-cases': z.array(z.string()).optional(),
+    profiles: z.array(ProfileSpecSchema).optional(),
     options: ConfigOptionsSchema.optional(),
     outputDirs: OutputDirsSchema.optional(),
   })
-  .strict();
+  .strict()
+  .refine(
+    (data) =>
+      (data['use-cases'] !== undefined && data['use-cases'].length > 0) ||
+      (data.profiles !== undefined && data.profiles.length > 0),
+    { message: 'Either "use-cases" or "profiles" must have at least one item' }
+  );
 
 export type AmgrConfigInput = z.infer<typeof AmgrConfigSchema>;
 export type ConfigOptionsInput = z.infer<typeof ConfigOptionsSchema>;

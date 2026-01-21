@@ -14,9 +14,12 @@ import type {
   ResolvedSource,
   SourceType,
   CombinedUseCases,
+  CombinedProfiles,
+  ProfileMetadata,
 } from '../types/sources.js';
 import { SOURCE_TYPE } from '../types/sources.js';
 import type { AmgrConfig } from '../types/config.js';
+import type { RepoConfig, ProfileDefinition } from '../types/repo.js';
 import type { Logger } from '../types/common.js';
 
 export const AMGR_CACHE_DIR = join(homedir(), '.amgr', 'cache');
@@ -367,4 +370,141 @@ export function getMergedSources(
   }
 
   return [...globalSources, ...projectSources];
+}
+
+export interface ParsedProfileSpec {
+  parent: string;
+  sub: string | null;
+  isWildcard: boolean;
+}
+
+export function parseProfileSpec(spec: string): ParsedProfileSpec {
+  const colonIndex = spec.indexOf(':');
+  if (colonIndex === -1) {
+    return { parent: spec, sub: null, isWildcard: false };
+  }
+
+  const parent = spec.substring(0, colonIndex);
+  const sub = spec.substring(colonIndex + 1);
+
+  if (sub === '*') {
+    return { parent, sub: null, isWildcard: true };
+  }
+
+  return { parent, sub, isWildcard: false };
+}
+
+export function isNestedProfile(
+  profileName: string,
+  repoConfig: RepoConfig
+): boolean {
+  const profile = repoConfig.profiles?.[profileName];
+  if (!profile) return false;
+  return profile['sub-profiles'] !== undefined && 
+         Object.keys(profile['sub-profiles']).length > 0;
+}
+
+export function getSubProfiles(
+  parentName: string,
+  repoConfig: RepoConfig
+): string[] {
+  const profile = repoConfig.profiles?.[parentName];
+  if (!profile?.['sub-profiles']) return [];
+  return Object.keys(profile['sub-profiles']);
+}
+
+export function expandProfiles(
+  profiles: string[],
+  repoConfig: RepoConfig
+): string[] {
+  const expanded: string[] = [];
+
+  for (const spec of profiles) {
+    const parsed = parseProfileSpec(spec);
+
+    if (parsed.sub !== null) {
+      expanded.push(spec);
+      continue;
+    }
+
+    const hasSubProfiles = isNestedProfile(parsed.parent, repoConfig);
+
+    if (parsed.isWildcard || hasSubProfiles) {
+      const subs = getSubProfiles(parsed.parent, repoConfig);
+      if (subs.length > 0) {
+        for (const sub of subs) {
+          expanded.push(`${parsed.parent}:${sub}`);
+        }
+      } else {
+        expanded.push(parsed.parent);
+      }
+    } else {
+      expanded.push(parsed.parent);
+    }
+  }
+
+  return expanded;
+}
+
+export function getSourceProfiles(
+  source: ResolvedSource
+): Record<string, ProfileDefinition> {
+  if (!source.localPath) {
+    throw new Error('Source must be resolved before getting profiles');
+  }
+
+  try {
+    const config = loadRepoConfig(source.localPath);
+    return config.profiles ?? {};
+  } catch {
+    return {};
+  }
+}
+
+export function getCombinedProfiles(sources: ResolvedSource[]): CombinedProfiles {
+  const combined: CombinedProfiles = {};
+
+  for (const source of sources) {
+    const profiles = getSourceProfiles(source);
+    const useCases = getSourceUseCases(source);
+    const sourceName = getSourceDisplayName(source);
+
+    for (const [name, metadata] of Object.entries(profiles)) {
+      if (!combined[name]) {
+        const profileMeta: ProfileMetadata = {
+          description: metadata.description,
+          sources: [sourceName],
+        };
+        if (metadata['sub-profiles']) {
+          profileMeta['sub-profiles'] = {};
+          for (const [subName, subMeta] of Object.entries(metadata['sub-profiles'])) {
+            profileMeta['sub-profiles'][subName] = { description: subMeta.description };
+          }
+        }
+        combined[name] = profileMeta;
+      } else {
+        combined[name].sources.push(sourceName);
+        combined[name].description = metadata.description;
+        if (metadata['sub-profiles']) {
+          combined[name]['sub-profiles'] = combined[name]['sub-profiles'] ?? {};
+          for (const [subName, subMeta] of Object.entries(metadata['sub-profiles'])) {
+            combined[name]['sub-profiles']![subName] = { description: subMeta.description };
+          }
+        }
+      }
+    }
+
+    for (const [name, metadata] of Object.entries(useCases)) {
+      if (!combined[name]) {
+        combined[name] = {
+          description: metadata.description,
+          sources: [sourceName],
+        };
+      } else if (!combined[name].sources.includes(sourceName)) {
+        combined[name].sources.push(sourceName);
+      }
+    }
+  }
+
+  return combined;
 }

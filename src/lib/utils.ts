@@ -2,6 +2,32 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import type { Logger, CommandOptions } from '../types/common.js';
 
+/**
+ * Scope context for filtering.
+ * - 'global': /shared/ directory - can reference any profile or sub-profile
+ * - string: /parent/_shared/ directory - can only reference sub-profile names (e.g., 'frontend', not 'development:frontend')
+ */
+export type ProfileScope = 'global' | string;
+
+/**
+ * Context for profile-aware filtering.
+ */
+export interface FilterContext {
+  /** The profiles the user selected (e.g., ["development:frontend"]) */
+  targetProfiles: string[];
+  /** Current scope: 'global' for /shared/, or parent name for /parent/_shared/ */
+  currentScope: ProfileScope;
+}
+
+/**
+ * Result of frontmatter scope validation.
+ */
+export interface FrontmatterScopeValidation {
+  valid: boolean;
+  errors: string[];
+  warnings: string[];
+}
+
 interface FrontmatterResult {
   [key: string]: string | string[];
 }
@@ -88,6 +114,128 @@ export function shouldIncludeForUseCases(
   return targetUseCases.includes(fileUseCases);
 }
 
+function getProfilesFromFrontmatter(frontmatter: FrontmatterResult): string[] | null {
+  const profiles = frontmatter['profiles'] ?? frontmatter['use-cases'];
+  if (!profiles) return null;
+  return Array.isArray(profiles) ? profiles : [profiles];
+}
+
+function getExcludeProfilesFromFrontmatter(frontmatter: FrontmatterResult): string[] | null {
+  const exclude = frontmatter['exclude-from-profiles'] ?? frontmatter['exclude-from-use-cases'];
+  if (!exclude) return null;
+  return Array.isArray(exclude) ? exclude : [exclude];
+}
+
+function profileMatchesTarget(
+  declaredProfile: string,
+  targetProfile: string,
+  scope: ProfileScope
+): boolean {
+  if (scope === 'global') {
+    // In global scope (/shared/), frontmatter can use:
+    // - Full specs: "development:frontend" matches "development:frontend"
+    // - Parent only: "development" matches "development:frontend" or "development:backend"
+    if (declaredProfile === targetProfile) return true;
+    
+    // Check if declared is a parent matching the target's parent
+    const colonIndex = targetProfile.indexOf(':');
+    if (colonIndex !== -1) {
+      const targetParent = targetProfile.substring(0, colonIndex);
+      if (declaredProfile === targetParent) return true;
+    }
+    
+    return false;
+  }
+
+  // In parent scope (/parent/_shared/), frontmatter should only use sub-profile names
+  // e.g., in /development/_shared/, use "frontend" not "development:frontend"
+  const colonIndex = targetProfile.indexOf(':');
+  if (colonIndex === -1) {
+    // Target is a flat profile - shouldn't be filtering in parent _shared
+    return false;
+  }
+  
+  const targetParent = targetProfile.substring(0, colonIndex);
+  const targetSub = targetProfile.substring(colonIndex + 1);
+  
+  // Only match if we're in the right parent scope
+  if (scope !== targetParent) return false;
+  
+  // In scoped context, declared profile should be just the sub-profile name
+  return declaredProfile === targetSub;
+}
+
+export function shouldIncludeForProfiles(
+  filePath: string,
+  context: FilterContext
+): boolean {
+  const frontmatter = parseFrontmatter(filePath);
+
+  if (!frontmatter) {
+    return true;
+  }
+
+  const excludeProfiles = getExcludeProfilesFromFrontmatter(frontmatter);
+  if (excludeProfiles) {
+    for (const targetProfile of context.targetProfiles) {
+      for (const excludeProfile of excludeProfiles) {
+        if (profileMatchesTarget(excludeProfile, targetProfile, context.currentScope)) {
+          return false;
+        }
+      }
+    }
+  }
+
+  const declaredProfiles = getProfilesFromFrontmatter(frontmatter);
+  if (!declaredProfiles) {
+    return true;
+  }
+
+  for (const targetProfile of context.targetProfiles) {
+    for (const declaredProfile of declaredProfiles) {
+      if (profileMatchesTarget(declaredProfile, targetProfile, context.currentScope)) {
+        return true;
+      }
+    }
+  }
+
+  return false;
+}
+
+export function validateFrontmatterScope(
+  filePath: string,
+  currentScope: ProfileScope,
+  validSubProfiles: string[]
+): FrontmatterScopeValidation {
+  const result: FrontmatterScopeValidation = { valid: true, errors: [], warnings: [] };
+  
+  const frontmatter = parseFrontmatter(filePath);
+  if (!frontmatter) return result;
+
+  const declaredProfiles = getProfilesFromFrontmatter(frontmatter);
+  if (!declaredProfiles || declaredProfiles.length === 0) return result;
+
+  if (currentScope === 'global') {
+    return result;
+  }
+
+  for (const profile of declaredProfiles) {
+    if (profile.includes(':')) {
+      result.warnings.push(
+        `"profiles: [${profile}]" uses full profile spec in scoped context. Use just the sub-profile name (e.g., "${profile.split(':')[1]}")`
+      );
+      result.valid = false;
+    } else if (!validSubProfiles.includes(profile)) {
+      result.warnings.push(
+        `"profiles: [${profile}]" references profile outside of "${currentScope}" scope. Allowed: [${validSubProfiles.join(', ')}]`
+      );
+      result.valid = false;
+    }
+  }
+
+  return result;
+}
+
 export function parseJsonc(content: string): unknown {
   const jsonContent = content
     .replace(/\/\/.*$/gm, '')
@@ -139,4 +287,11 @@ export function isCloudSyncedPath(projectPath: string): CloudProvider | null {
   }
 
   return null;
+}
+
+export function getEffectiveProfiles(config: {
+  profiles?: string[] | undefined;
+  'use-cases'?: string[] | undefined;
+}): string[] {
+  return config.profiles ?? config['use-cases'] ?? [];
 }

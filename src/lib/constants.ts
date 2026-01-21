@@ -238,5 +238,6 @@ export const LOCK_VERSION = '1.0.0';
 export const REPO_FILE = 'repo.json';
 export const SHARED_DIR = 'shared';
 export const USE_CASES_DIR = 'use-cases';
+export const SHARED_SUBDIR = '_shared';
 export const RULESYNC_DIR = '.rulesync';
 export const RULESYNC_CONFIG = 'rulesync.jsonc';

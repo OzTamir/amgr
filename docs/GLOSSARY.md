@@ -13,7 +13,24 @@ A repository or directory containing agent configurations that can be used by am
 - **Local source**: A directory on the local filesystem (e.g., `~/my-agents` or `./local-rules`)
 - **Global source**: A source configured in `~/.amgr/config.json` that's available to all projects (see [Global Source](#global-source))
 
-**Structure:**
+**Structure (new profiles):**
+```
+source-repo/
+├── repo.json          # Required: repository manifest
+├── shared/            # Global shared (all profiles)
+│   ├── rules/
+│   ├── commands/
+│   ├── skills/
+│   └── subagents/
+├── development/       # Nested profile
+│   ├── _shared/       # Shared across sub-profiles
+│   ├── frontend/      # Sub-profile: development:frontend
+│   └── backend/       # Sub-profile: development:backend
+└── writing/           # Flat profile
+    └── .rulesync/
+```
+
+**Structure (legacy use-cases):**
 ```
 source-repo/
 ├── repo.json          # Required: repository manifest
@@ -27,7 +44,7 @@ source-repo/
     └── writing/
 ```
 
-**Related:** See [Source Layering](#source-layering)
+**Related:** See [Source Layering](#source-layering), [Profile](#profile)
 
 ---
 
@@ -78,9 +95,70 @@ A type of content that can be synced to targets. Not all features are supported 
 
 ---
 
-### Use-Case
+### Profile
 
-A named configuration set that groups related content. Use-cases are defined in source repositories and referenced in project configs.
+A named configuration set that groups related content. Profiles replace the deprecated "use-cases" terminology and support hierarchical organization with sub-profiles.
+
+**Types:**
+- **Flat profile**: Simple profile without sub-profiles (e.g., `writing`)
+- **Nested profile**: Profile with sub-profiles (e.g., `development` with `frontend` and `backend`)
+- **Sub-profile**: A child profile under a nested parent (e.g., `development:frontend`)
+
+**Selection syntax:**
+
+| Syntax | Meaning |
+|--------|---------|
+| `"writing"` | Flat profile |
+| `"development:frontend"` | Single sub-profile |
+| `"development:*"` | All sub-profiles (wildcard) |
+| `"development"` | Shorthand for `development:*` if nested |
+
+**Structure in source (nested profile):**
+```
+development/               # Nested profile
+├── _shared/               # Shared across all sub-profiles
+│   └── rules/
+├── frontend/             # Sub-profile
+│   └── .rulesync/
+└── backend/              # Sub-profile
+    └── .rulesync/
+```
+
+**Structure in source (flat profile):**
+```
+writing/                  # Flat profile
+└── .rulesync/
+    ├── rules/
+    ├── commands/
+    ├── skills/
+    └── subagents/
+```
+
+**Defined in:** Source's `repo.json`:
+```json
+{
+  "profiles": {
+    "development": {
+      "description": "Coding and debugging",
+      "sub-profiles": {
+        "frontend": { "description": "React, Vue, browser APIs" },
+        "backend": { "description": "Node.js, APIs, databases" }
+      }
+    },
+    "writing": {
+      "description": "Documentation and content"
+    }
+  }
+}
+```
+
+---
+
+### Use-Case (Deprecated)
+
+> **Deprecated**: Use [Profile](#profile) instead.
+
+A named configuration set that groups related content. Use-cases are the legacy term for profiles and are still supported for backwards compatibility.
 
 **Examples:**
 - `development` - Coding, debugging, testing
@@ -244,7 +322,7 @@ The local directory (`~/.amgr/cache/`) where git sources are cloned.
 
 ### Config File
 
-The project configuration file (`.amgr/config.json`) that defines sources, targets, features, and use-cases.
+The project configuration file (`.amgr/config.json`) that defines sources, targets, features, and profiles.
 
 **Location:** `<project>/.amgr/config.json`
 
@@ -262,24 +340,33 @@ The repository manifest file (`repo.json`) in an amgr source repository.
 
 **Required properties:**
 - `name` - Repository name
-- `use-cases` - Object mapping use-case names to descriptions
+- `profiles` OR `use-cases` - Object mapping profile/use-case names to metadata
 
 ---
 
 ### Shared Content
 
-Content in a source's `shared/` directory that applies to all use-cases.
+Content in a source's `shared/` directory that applies to all profiles/use-cases.
 
-**Filtering:** Shared content can be tagged with use-cases via YAML frontmatter:
+**Global shared (`/shared/`):**
+Applies to all profiles. Can be filtered using frontmatter.
+
+**Parent shared (`/parent/_shared/`):**
+Applies to all sub-profiles under a nested profile. Frontmatter uses sub-profile names only.
+
+**Filtering with frontmatter:**
 ```yaml
 ---
-use-cases:
+profiles:
   - development
-  - product
+  - development:frontend
+  - writing
 ---
 ```
 
-Only included when the frontmatter matches the config's use-cases.
+Only included when the frontmatter matches the config's profiles.
+
+Legacy `use-cases` frontmatter is also supported for backwards compatibility.
 
 ---
 
@@ -287,7 +374,30 @@ Only included when the frontmatter matches the config's use-cases.
 
 YAML metadata at the beginning of markdown files, used for filtering.
 
-**Include for specific use-cases:**
+**Include for specific profiles:**
+```yaml
+---
+profiles:
+  - development
+  - development:frontend
+---
+```
+
+**Exclude from specific profiles:**
+```yaml
+---
+exclude-from-profiles:
+  - writing
+---
+```
+
+**Scope-aware filtering:**
+| Location | Allowed values |
+|----------|----------------|
+| `/shared/` | Any profile or sub-profile (`development`, `development:frontend`) |
+| `/parent/_shared/` | Sub-profile names only (`frontend`, `backend`) |
+
+**Legacy format (still supported):**
 ```yaml
 ---
 use-cases:
@@ -295,25 +405,22 @@ use-cases:
 ---
 ```
 
-**Exclude from specific use-cases:**
-```yaml
----
-exclude-from-use-cases:
-  - writing
----
-```
-
 ---
 
 ### Composition
 
-The process of merging content from shared directories and use-case directories into a single output.
+The process of merging content from shared directories and profile directories into a single output.
 
-**Order:**
-1. Copy `shared/` content (filtered by frontmatter)
-2. Overlay `use-cases/<name>/.rulesync/` content
-3. Repeat for each use-case (later overrides earlier)
+**Order for nested profiles (e.g., `development:frontend`):**
+1. Copy `/shared/` content (filtered by "development" or "development:frontend")
+2. Copy `/development/_shared/` content (filtered by "frontend")
+3. Copy `/development/frontend/.rulesync/` content (all)
 4. Repeat for each source (later overrides earlier)
+
+**Order for flat profiles (e.g., `writing`):**
+1. Copy `/shared/` content (filtered by "writing")
+2. Copy `/writing/.rulesync/` content (all)
+3. Repeat for each source (later overrides earlier)
 
 ---
 

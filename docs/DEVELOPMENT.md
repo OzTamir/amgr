@@ -75,25 +75,26 @@ amgr/
 
 ## Code Style
 
-### ES Modules
+### TypeScript with ES Modules
 
-The project uses ES modules exclusively (no CommonJS). Always use:
+The project uses TypeScript with ES modules. Always use:
 
-```javascript
+```typescript
 // Imports
 import { something } from './module.js';
 import { readFileSync } from 'node:fs';
+import type { SomeType } from './types.js';
 
 // Exports
-export function myFunction() { }
+export function myFunction(): void { }
 export { myFunction, anotherFunction };
 ```
 
-Note: File extensions (`.js`) are required in import paths.
+Note: File extensions (`.js`) are required in import paths, even for TypeScript files.
 
 ### Conventions
 
-- **No TypeScript**: Pure JavaScript for simplicity
+- **TypeScript**: Strict mode enabled for type safety
 - **Node.js APIs**: Prefix with `node:` (e.g., `node:fs`, `node:path`)
 - **Async/await**: Prefer async functions over callbacks or raw promises
 - **Error handling**: Throw errors with descriptive messages, catch at command level
@@ -110,11 +111,16 @@ Note: File extensions (`.js`) are required in import paths.
 
 1. **Create the command file** in `src/commands/`:
 
-```javascript
-// src/commands/mycommand.js
+```typescript
+// src/commands/mycommand.ts
 import { createLogger } from '../lib/utils.js';
+import type { CommandOptions } from '../types/common.js';
 
-export async function myCommand(options = {}) {
+interface MyCommandOptions extends CommandOptions {
+  myOption?: string;
+}
+
+export async function myCommand(options: MyCommandOptions = {}): Promise<void> {
   const projectPath = process.cwd();
   const logger = createLogger(options.verbose);
 
@@ -125,15 +131,15 @@ export async function myCommand(options = {}) {
     // Success
     logger.success('Done!');
   } catch (e) {
-    logger.error(e.message);
+    logger.error((e as Error).message);
     process.exit(1);
   }
 }
 ```
 
-2. **Register in `src/index.js`**:
+2. **Register in `src/index.ts`**:
 
-```javascript
+```typescript
 import { myCommand } from './commands/mycommand.js';
 
 program
@@ -153,9 +159,9 @@ amgr mycommand --verbose
 
 Features are content types that can be synced (rules, commands, skills, etc.).
 
-1. **Add to `src/lib/constants.js`**:
+1. **Add to `src/types/config.ts`**:
 
-```javascript
+```typescript
 export const VALID_FEATURES = [
   'rules',
   'ignore',
@@ -164,15 +170,19 @@ export const VALID_FEATURES = [
   'subagents',
   'skills',
   'myfeature'  // Add new feature
-];
+] as const;
+```
 
-export const FEATURE_DESCRIPTIONS = {
+2. **Add to `src/lib/constants.ts`**:
+
+```typescript
+export const FEATURE_DESCRIPTIONS: Record<Feature, string> = {
   // ... existing
   myfeature: 'Description of what this feature does'
 };
 
 // Update FEATURE_SUPPORT matrix
-export const FEATURE_SUPPORT = {
+export const FEATURE_SUPPORT: Record<Target, Record<Feature, boolean>> = {
   claudecode: { /* ... */ myfeature: true },
   cursor: { /* ... */ myfeature: false },
   // ... for each target
@@ -182,13 +192,13 @@ export const FEATURE_SUPPORT = {
 export const ENTITY_TYPES = ['rules', 'commands', 'skills', 'subagents', 'myfeature'];
 ```
 
-2. **Update composition in `src/lib/compose.js`** if needed:
+3. **Update composition in `src/lib/compose.ts`** if needed:
 
-The composition logic already handles entity types generically via `ENTITY_TYPES`. Special handling (like skills directories vs markdown files) may need additions to `copySharedEntityDir()`.
+The composition logic already handles entity types generically via `ENTITY_TYPES`. Special handling (like skills directories vs markdown files) may need additions to `copySharedEntityDir()` or `copyFilteredEntityDir()`.
 
-3. **Update rulesync integration** if the feature requires special rulesync config.
+4. **Update rulesync integration** if the feature requires special rulesync config.
 
-4. **Update schema** in `schemas/amgr.schema.json`:
+5. **Update schema** in `schemas/amgr.schema.json`:
 
 ```json
 "features": {
@@ -202,31 +212,35 @@ The composition logic already handles entity types generically via `ENTITY_TYPES
 
 Targets are AI tools that receive generated configurations.
 
-1. **Add to `src/lib/constants.js`**:
+1. **Add to `src/types/config.ts`**:
 
-```javascript
+```typescript
 export const VALID_TARGETS = [
   // ... existing
   'mytarget'
-];
+] as const;
+```
 
-export const TARGET_DESCRIPTIONS = {
+2. **Add to `src/lib/constants.ts`**:
+
+```typescript
+export const TARGET_DESCRIPTIONS: Record<Target, string> = {
   // ... existing
   mytarget: 'My Target AI Tool'
 };
 
-export const FEATURE_SUPPORT = {
+export const FEATURE_SUPPORT: Record<Target, Record<Feature, boolean>> = {
   // ... existing
   mytarget: { rules: true, ignore: true, mcp: false, commands: true, subagents: false, skills: true }
 };
 
-export const TARGET_DIRECTORIES = {
+export const TARGET_DIRECTORIES: Partial<Record<Target, string>> = {
   // ... existing
   mytarget: '.mytarget'  // Where files get deployed
 };
 ```
 
-2. **Update schema** in `schemas/amgr.schema.json`:
+3. **Update schema** in `schemas/amgr.schema.json`:
 
 ```json
 "targets": {
@@ -236,7 +250,7 @@ export const TARGET_DIRECTORIES = {
 }
 ```
 
-3. **Ensure rulesync supports the target** (this may require upstream changes to rulesync).
+4. **Ensure rulesync supports the target** (this may require upstream changes to rulesync).
 
 ## Testing
 
@@ -249,7 +263,14 @@ Create a test environment:
 mkdir -p ~/test-agents
 cd ~/test-agents
 amgr repo init --name "test" --description "Test repo"
-amgr repo add development --description "Dev use-case"
+
+# Add a nested profile
+amgr repo add development --nested --description "Dev profile"
+amgr repo add development:frontend --description "Frontend sub-profile"
+amgr repo add development:backend --description "Backend sub-profile"
+
+# Add a flat profile
+amgr repo add writing --description "Writing profile"
 
 # Create a test project
 mkdir -p ~/test-project
@@ -339,8 +360,15 @@ npm outdated  # Check for newer versions
 ### Testing Changes Without npm link
 
 ```bash
-node src/index.js sync --verbose
-node src/index.js --help
+# Build first (TypeScript)
+npm run build
+
+# Then run
+node dist/index.js sync --verbose
+node dist/index.js --help
+
+# Or use ts-node during development
+npx tsx src/index.ts --help
 ```
 
 ### Resetting Test State
@@ -357,8 +385,11 @@ rm -rf ~/.amgr/cache/
 
 Before submitting a PR:
 
-- [ ] Code follows existing style (ES modules, no TypeScript)
+- [ ] Code follows existing style (TypeScript with ES modules)
+- [ ] Types are properly defined (no `any` unless absolutely necessary)
 - [ ] New features have corresponding constants/schema updates
+- [ ] Tests pass (`npm test`)
+- [ ] Type check passes (`npm run typecheck`)
 - [ ] Commands have appropriate `--verbose` and `--dry-run` support
 - [ ] Error messages are clear and actionable
 - [ ] Documentation is updated if needed
@@ -373,3 +404,5 @@ Key principles:
 - Later sources override earlier (layering)
 - Lock file tracks amgr-created files
 - rulesync handles actual generation
+- Profiles replace use-cases (backwards compatible)
+- Nested profiles support hierarchical organization

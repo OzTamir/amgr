@@ -72,7 +72,7 @@ describe('sync command', () => {
     expect(process.exit).toHaveBeenCalledWith(1);
   });
 
-  it('fails when no use-cases are configured', async () => {
+  it('fails when no profiles are configured', async () => {
     const repoDir = createTempDir();
     try {
       createTestRepo(repoDir, ['development']);
@@ -84,7 +84,7 @@ describe('sync command', () => {
       await sync();
 
       expect(consoleSpy.error).toHaveBeenCalledWith(
-        expect.stringContaining('At least one use-case is required')
+        expect.stringContaining('must have at least one item')
       );
       expect(process.exit).toHaveBeenCalledWith(1);
     } finally {
@@ -226,7 +226,7 @@ describe('sync command', () => {
         expect.stringContaining('Features:')
       );
       expect(consoleSpy.log).toHaveBeenCalledWith(
-        expect.stringContaining('Use-cases:')
+        expect.stringContaining('Profiles:')
       );
     } finally {
       cleanupTempDir(repoDir);

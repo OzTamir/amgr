@@ -13,10 +13,10 @@ import {
   configExists,
   normalizeOutputDirPrefix,
 } from '../lib/config.js';
-import { createLogger } from '../lib/utils.js';
+import { createLogger, getEffectiveProfiles } from '../lib/utils.js';
 import {
   resolveSources,
-  getCombinedUseCases,
+  getCombinedProfiles,
 } from '../lib/sources.js';
 import { getGlobalSources } from '../lib/global-config.js';
 import type { CommandOptions, Logger } from '../types/common.js';
@@ -63,12 +63,58 @@ async function editFeatures(config: AmgrConfig, _logger: Logger): Promise<AmgrCo
   return { ...config, features };
 }
 
-async function editUseCases(config: AmgrConfig, logger: Logger): Promise<AmgrConfig> {
+function buildProfileChoices(
+  combined: ReturnType<typeof getCombinedProfiles>,
+  currentProfiles: string[]
+): Array<{ name: string; value: string; checked: boolean }> {
+  const choices: Array<{ name: string; value: string; checked: boolean }> = [];
+  const profileNames = Object.keys(combined).sort();
+
+  for (const name of profileNames) {
+    const profileData = combined[name];
+    if (!profileData) continue;
+    const { description, sources } = profileData;
+    const sourceLabel =
+      sources.length > 1 ? ` (${sources.join(', ')})` : ` (${sources[0]})`;
+    
+    const subProfiles = profileData['sub-profiles'];
+    if (subProfiles && Object.keys(subProfiles).length > 0) {
+      const subNames = Object.keys(subProfiles).sort();
+      const hasWildcard = currentProfiles.includes(`${name}:*`) || currentProfiles.includes(name);
+      choices.push({
+        name: `${name} - ${description}${sourceLabel}`,
+        value: `${name}:*`,
+        checked: hasWildcard,
+      });
+      for (let i = 0; i < subNames.length; i++) {
+        const subName = subNames[i]!;
+        const subData = subProfiles[subName];
+        const isLast = i === subNames.length - 1;
+        const prefix = isLast ? '  └─' : '  ├─';
+        choices.push({
+          name: `${prefix} ${subName} - ${subData?.description ?? ''}`,
+          value: `${name}:${subName}`,
+          checked: currentProfiles.includes(`${name}:${subName}`),
+        });
+      }
+    } else {
+      choices.push({
+        name: `${name} - ${description}${sourceLabel}`,
+        value: name,
+        checked: currentProfiles.includes(name),
+      });
+    }
+  }
+
+  return choices;
+}
+
+async function editProfiles(config: AmgrConfig, logger: Logger): Promise<AmgrConfig> {
   const globalSources = getGlobalSources();
   const allSources = [...globalSources, ...(config.sources ?? [])];
 
   if (allSources.length === 0) {
-    logger.warn('No sources configured. Add sources first to select use-cases.');
+    logger.warn('No sources configured. Add sources first to select profiles.');
     return config;
   }
 
@@ -81,40 +127,40 @@ async function editUseCases(config: AmgrConfig, logger: Logger): Promise<AmgrCon
     return config;
   }
 
-  const combined = getCombinedUseCases(resolvedSources);
-  const useCaseNames = Object.keys(combined).sort();
+  const combined = getCombinedProfiles(resolvedSources);
+  const profileNames = Object.keys(combined).sort();
 
-  if (useCaseNames.length === 0) {
-    logger.warn('No use-cases found in configured sources.');
+  if (profileNames.length === 0) {
+    logger.warn('No profiles found in configured sources.');
     return config;
   }
 
-  const useCases = (await checkbox({
-    message: 'Select use-cases:',
-    choices: useCaseNames.map((name) => {
-      const { description, sources } = combined[name]!;
-      const sourceLabel =
-        sources.length > 1 ? ` (${sources.join(', ')})` : ` (${sources[0]})`;
-      return {
-        name: `${name} - ${description}${sourceLabel}`,
-        value: name,
-        checked: config['use-cases'].includes(name),
-      };
-    }),
+  const currentProfiles = getEffectiveProfiles(config);
+  const choices = buildProfileChoices(combined, currentProfiles);
+
+  const selectedProfiles = (await checkbox({
+    message: 'Select profiles:',
+    choices,
     required: true,
   })) as string[];
 
-  if (useCases.length === 0) {
-    throw new Error('At least one use-case is required.');
+  if (selectedProfiles.length === 0) {
+    throw new Error('At least one profile is required.');
   }
 
-  const newConfig = { ...config, 'use-cases': useCases };
+  const newConfig = { ...config, 'use-cases': selectedProfiles };
 
   if (newConfig.outputDirs) {
     const validOutputDirs: Record<string, string> = {};
-    for (const [useCase, prefix] of Object.entries(newConfig.outputDirs)) {
-      if (useCases.includes(useCase)) {
-        validOutputDirs[useCase] = prefix;
+    for (const [profile, prefix] of Object.entries(newConfig.outputDirs)) {
+      const profileParent = profile.includes(':') ? profile.split(':')[0] : profile;
+      const matchesSelected = selectedProfiles.some(p => {
+        if (p === profile) return true;
+        if (p.endsWith(':*') && p.startsWith(`${profileParent}:`)) return true;
+        return false;
+      });
+      if (matchesSelected) {
+        validOutputDirs[profile] = prefix;
       }
     }
     if (Object.keys(validOutputDirs).length > 0) {
@@ -128,32 +174,32 @@ async function editUseCases(config: AmgrConfig, logger: Logger): Promise<AmgrCon
 }
 
 async function editOutputDirs(config: AmgrConfig, logger: Logger): Promise<AmgrConfig> {
-  const useCases = config['use-cases'];
+  const profiles = getEffectiveProfiles(config);
 
-  if (useCases.length === 0) {
-    logger.warn('No use-cases configured. Add use-cases first.');
+  if (profiles.length === 0) {
+    logger.warn('No profiles configured. Add profiles first.');
     return config;
   }
 
   const currentOutputDirs = config.outputDirs ?? {};
 
   logger.info(
-    '\nSpecify a directory prefix for each use-case (e.g., "docs/" places files in docs/.claude/).'
+    '\nSpecify a directory prefix for each profile (e.g., "docs/" places files in docs/.claude/).'
   );
   logger.info('Leave empty to use the default (project root).\n');
 
   const outputDirs: Record<string, string> = {};
 
-  for (const useCase of useCases) {
-    const currentValue = currentOutputDirs[useCase] ?? '';
+  for (const profile of profiles) {
+    const currentValue = currentOutputDirs[profile] ?? '';
     const dirInput = await input({
-      message: `Output directory for '${useCase}':`,
+      message: `Output directory for '${profile}':`,
       default: currentValue,
     });
 
     const normalized = normalizeOutputDirPrefix(dirInput);
     if (normalized) {
-      outputDirs[useCase] = normalized;
+      outputDirs[profile] = normalized;
     }
   }
 
@@ -215,10 +261,11 @@ async function editOptions(config: AmgrConfig, _logger: Logger): Promise<AmgrCon
 }
 
 function formatCurrentConfig(config: AmgrConfig): string {
+  const profiles = getEffectiveProfiles(config);
   const lines: string[] = [];
   lines.push(`  Targets: ${config.targets.join(', ')}`);
   lines.push(`  Features: ${config.features.join(', ')}`);
-  lines.push(`  Use-cases: ${config['use-cases'].join(', ')}`);
+  lines.push(`  Profiles: ${profiles.join(', ')}`);
 
   if (config.outputDirs && Object.keys(config.outputDirs).length > 0) {
     const outputDirEntries = Object.entries(config.outputDirs)
@@ -265,8 +312,8 @@ export async function configEdit(options: CommandOptions = {}): Promise<void> {
         choices: [
           { name: 'Targets - AI tools to generate configs for', value: 'targets' },
           { name: 'Features - Content types to include', value: 'features' },
-          { name: 'Use-cases - Which use-cases to enable', value: 'use-cases' },
-          { name: 'Output directories - Custom paths per use-case', value: 'outputDirs' },
+          { name: 'Profiles - Which profiles to enable', value: 'use-cases' },
+          { name: 'Output directories - Custom paths per profile', value: 'outputDirs' },
           { name: 'Options - Advanced settings', value: 'options' },
           { name: 'Done - Save and exit', value: 'done' },
         ],
@@ -286,7 +333,7 @@ export async function configEdit(options: CommandOptions = {}): Promise<void> {
           config = await editFeatures(config, logger);
           break;
         case 'use-cases':
-          config = await editUseCases(config, logger);
+          config = await editProfiles(config, logger);
           break;
         case 'outputDirs':
           config = await editOutputDirs(config, logger);

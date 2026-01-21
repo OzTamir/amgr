@@ -9,6 +9,7 @@ import {
   getEffectiveOptions,
   normalizeOutputDirPrefix,
 } from '../lib/config.js';
+import { shouldMigrateAmgrConfig } from '../lib/migration.js';
 import {
   getTrackedFiles,
   removeTrackedFiles,
@@ -16,13 +17,14 @@ import {
   writeLockFile,
 } from '../lib/lock.js';
 import {
-  compose,
+  composeWithProfiles,
   generateRulesyncConfig,
   writeRulesyncConfig,
 } from '../lib/compose.js';
 import { deploy } from '../lib/deploy.js';
-import { createLogger, isVerbose } from '../lib/utils.js';
-import { resolveSources, getMergedSources } from '../lib/sources.js';
+import { createLogger, isVerbose, getEffectiveProfiles } from '../lib/utils.js';
+import { resolveSources, getMergedSources, expandProfiles } from '../lib/sources.js';
+import { loadRepoConfig } from '../lib/repo-config.js';
 import { getGlobalSources } from '../lib/global-config.js';
 import type { CommandOptions } from '../types/common.js';
 
@@ -66,14 +68,18 @@ export async function sync(options: CommandOptions = {}): Promise<void> {
     logger.info('Loading configuration...');
     const config = loadAndValidateConfig(projectPath, options.config);
 
+    if (shouldMigrateAmgrConfig(config)) {
+      logger.warn('Config uses deprecated "use-cases" field. Consider updating to "profiles".');
+    }
+
     const targets = expandTargets(config.targets);
     const features = config.features;
-    const useCases = config['use-cases'];
+    const profiles = getEffectiveProfiles(config);
     const configOptions = getEffectiveOptions(config);
 
     logger.verbose(`Targets: ${targets.join(', ')}`);
     logger.verbose(`Features: ${features.join(', ')}`);
-    logger.verbose(`Use-cases: ${useCases.join(', ')}`);
+    logger.verbose(`Profiles: ${profiles.join(', ')}`);
 
     const globalSources = getGlobalSources();
     const mergedSources = getMergedSources(config, globalSources);
@@ -86,10 +92,10 @@ export async function sync(options: CommandOptions = {}): Promise<void> {
       );
     }
 
-    if (!useCases || useCases.length === 0) {
+    if (profiles.length === 0) {
       throw new Error(
-        'No use-cases configured in .amgr/config.json.\n' +
-          'Add use-cases after configuring sources, then run "amgr sync" again.'
+        'No profiles configured in .amgr/config.json.\n' +
+          'Add profiles after configuring sources, then run "amgr sync" again.'
       );
     }
 
@@ -102,6 +108,18 @@ export async function sync(options: CommandOptions = {}): Promise<void> {
       throw new Error(`Failed to resolve sources: ${message}`);
     }
     logger.verbose(`Resolved ${resolvedSources.length} source(s)`);
+
+    let expandedProfiles = profiles;
+    for (const source of resolvedSources) {
+      try {
+        const repoConfig = loadRepoConfig(source.localPath);
+        expandedProfiles = expandProfiles(expandedProfiles, repoConfig);
+      } catch {}
+    }
+    
+    if (expandedProfiles.length !== profiles.length) {
+      logger.verbose(`Expanded profiles: ${expandedProfiles.join(', ')}`);
+    }
 
     const trackedFiles = getTrackedFiles(projectPath);
     logger.verbose(`Previously tracked files: ${trackedFiles.length}`);
@@ -119,7 +137,7 @@ export async function sync(options: CommandOptions = {}): Promise<void> {
       }
     }
 
-    const outputGroups = groupUseCasesByOutputDir(useCases, config.outputDirs);
+    const outputGroups = groupUseCasesByOutputDir(expandedProfiles, config.outputDirs);
     const baseTempDir = join(tmpdir(), `amgr-${Date.now()}`);
     mkdirSync(baseTempDir, { recursive: true });
     logger.verbose(`Temp directory: ${baseTempDir}`);
@@ -148,9 +166,9 @@ export async function sync(options: CommandOptions = {}): Promise<void> {
         logger.info(
           `Composing content for: ${groupUseCases.join(' + ')} → ${prefixLabel}...`
         );
-        compose({
+        composeWithProfiles({
           resolvedSources,
-          useCases: groupUseCases,
+          profiles: groupUseCases,
           outputPath: tempDir,
           logger,
         });

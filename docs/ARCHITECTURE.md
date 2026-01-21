@@ -56,16 +56,30 @@ The primary data flow during a sync operation:
    git URLs -----> clone/pull -----> ~/.amgr/cache/
    local paths --> validate --> expanded absolute paths
 
-3. CONTENT COMPOSITION
-   resolved sources --> compose.js --> temp/.rulesync/
-       |                                     |
-       +-- shared/ (filtered by frontmatter) |
-       +-- use-cases/<name>/.rulesync/ ------+
+3. PROFILE EXPANSION
+   config.profiles --> sources.js --> expanded profiles
+       |
+       v
+   "development:*" --> ["development:frontend", "development:backend"]
+   "development" (nested) --> ["development:frontend", "development:backend"]
+   "writing" (flat) --> ["writing"]
 
-4. RULESYNC GENERATION
+4. CONTENT COMPOSITION
+   resolved sources --> compose.js --> temp/.rulesync/
+       |
+       +-- For nested profiles (e.g., development:frontend):
+       |     +-- /shared/ (filtered by "development" OR "development:frontend")
+       |     +-- /development/_shared/ (filtered by "frontend")
+       |     +-- /development/frontend/.rulesync/ (all content)
+       |
+       +-- For flat profiles (e.g., writing):
+             +-- /shared/ (filtered by "writing")
+             +-- /writing/.rulesync/ OR /use-cases/writing/.rulesync/
+
+5. RULESYNC GENERATION
    temp/.rulesync/ --> rulesync --> temp/.claude/, temp/.cursor/, etc.
 
-5. DEPLOYMENT
+6. DEPLOYMENT
    temp/.claude/, etc. --> deploy.js --> project/.claude/, etc.
                                |
                                +--> .amgr/amgr-lock.json (tracking)
@@ -138,8 +152,16 @@ Handles resolution of git URLs and local paths to usable local directories.
 - `resolveSources(sources)` - Resolve array of sources
 - `fetchGitSource(url)` - Clone or pull git repository
 - `getGitCachePath(url)` - Generate cache directory name from URL
-- `getCombinedUseCases(sources)` - Aggregate use-cases from all sources
+- `getCombinedUseCases(sources)` - Aggregate use-cases from all sources (legacy)
+- `getCombinedProfiles(sources)` - Aggregate profiles (including nested) from all sources
 - `validateSources(sources)` - Validate sources array structure
+
+**Profile handling functions:**
+- `parseProfileSpec(spec)` - Parse "development:frontend" → `{ parent: "development", sub: "frontend", isWildcard: false }`
+- `isNestedProfile(name, repoConfig)` - Check if profile has sub-profiles
+- `getSubProfiles(name, repoConfig)` - Get sub-profile names for a parent
+- `expandProfiles(profiles, repoConfig)` - Expand wildcards and bare parent names
+- `getSourceProfiles(source)` - Get profiles from a resolved source
 
 **Git caching:**
 - Git sources are cached in `~/.amgr/cache/`
@@ -152,18 +174,31 @@ Handles resolution of git URLs and local paths to usable local directories.
 Merges content from multiple sources into a single `.rulesync/` directory.
 
 **Key functions:**
-- `compose(options)` - Main composition orchestrator
+- `compose(options)` - Main composition orchestrator (legacy use-cases)
+- `composeWithProfiles(options)` - Profile-based composition (supports nested profiles)
 - `generateRulesyncConfig()` - Create rulesync.jsonc with targets/features
 - `writeRulesyncConfig()` - Write generated config to disk
 - `composeFromSource()` - Process single source (shared + use-cases)
+- `composeFromSourceWithProfiles()` - Process single source with profile support
 - `copySharedEntityDir()` - Copy with frontmatter filtering
-- `mergeRulesyncDir()` - Overlay use-case content
+- `copyFilteredEntityDir()` - Copy with scope-aware profile filtering
+- `copyGlobalShared()` - Copy `/shared/` with global scope
+- `copyParentShared()` - Copy `/parent/_shared/` with parent scope
+- `copySubProfileContent()` - Copy `/parent/sub/.rulesync/`
+- `copyFlatProfileContent()` - Copy from `/profile/.rulesync/` or `/use-cases/profile/.rulesync/`
+- `detectProfileType(sourcePath, profileName)` - Returns 'flat' or 'nested'
 
-**Composition process:**
+**Composition process for profiles:**
 1. Clean output directory
 2. For each source (in order):
-   - Copy `shared/` content filtered by frontmatter use-cases
-   - Overlay each requested `use-cases/<name>/.rulesync/` directory
+   - For each profile:
+     - If nested (e.g., `development:frontend`):
+       1. Copy `shared/` filtered by "development" OR "development:frontend"
+       2. Copy `development/_shared/` filtered by "frontend"
+       3. Copy `development/frontend/.rulesync/` (all content)
+     - If flat (e.g., `writing`):
+       1. Copy `shared/` filtered by "writing"
+       2. Copy `writing/.rulesync/` or `use-cases/writing/.rulesync/`
 3. Later sources override earlier sources (layering)
 
 ### `src/lib/deploy.js` - File Deployment
@@ -224,11 +259,24 @@ General-purpose helpers used across modules.
 
 **Key functions:**
 - `parseFrontmatter(filePath)` - Extract YAML frontmatter from markdown
-- `shouldIncludeForUseCases()` - Check if file matches use-case filter
+- `shouldIncludeForUseCases()` - Check if file matches use-case filter (legacy)
+- `shouldIncludeForProfiles(filePath, context)` - Scope-aware profile filtering
+- `validateFrontmatterScope(filePath, currentScope, validSubProfiles)` - Validate frontmatter scope rules
 - `parseJsonc(content)` - Parse JSON with comments
 - `readJsoncFile(filePath)` - Read and parse JSONC file
 - `createLogger(verbose)` - Create logger with verbose support
 - `isVerbose(options)` - Check verbose mode from options or env
+- `getEffectiveProfiles(config)` - Get profiles from config (prefers `profiles` over `use-cases`)
+
+**Profile filtering types:**
+```typescript
+type ProfileScope = 'global' | string; // 'global' for /shared/, parent name for /_shared/
+
+interface FilterContext {
+  targetProfiles: string[];   // What user selected: ["development:frontend"]
+  currentScope: ProfileScope; // 'global' or 'development'
+}
+```
 
 ### `src/lib/repo-config.js` - Repository Configuration
 
@@ -238,9 +286,13 @@ Manages `repo.json` files in amgr repositories.
 - `loadRepoConfig(repoPath)` - Load repo.json
 - `saveRepoConfig()` - Save repo.json
 - `validateRepoConfig()` - Validate structure
-- `addUseCaseToRepo()` / `removeUseCaseFromRepo()` - Manage use-cases
-- `useCaseExistsInRepo()` - Check if use-case is registered
-- `getRepoUseCases()` - List available use-cases
+- `addUseCaseToRepo()` / `removeUseCaseFromRepo()` - Manage use-cases (legacy)
+- `useCaseExistsInRepo()` - Check if use-case is registered (legacy)
+- `getRepoUseCases()` - List available use-cases (legacy)
+- `profileExistsInRepo(repoPath, profileSpec)` - Check if profile/sub-profile exists
+- `addProfileToRepo(repoPath, profileSpec, description)` - Add profile or sub-profile
+- `removeProfileFromRepo(repoPath, profileSpec)` - Remove profile or sub-profile
+- `initNestedProfile(repoPath, name, description)` - Initialize nested profile with `_shared/`
 - `validateRepoStructure()` - Check directory structure
 
 ## State Management
@@ -323,15 +375,22 @@ amgr tracks every file it creates. This ensures:
 
 ### 4. Frontmatter-Based Filtering
 
-Shared content can be tagged with use-cases via YAML frontmatter:
+Shared content can be tagged with profiles via YAML frontmatter:
 ```yaml
 ---
-use-cases:
+profiles:
   - development
-  - product
+  - development:frontend
+  - writing
 ---
 ```
-Files are only included when their use-cases match the config.
+Files are only included when their profiles match the config.
+
+**Scope-aware filtering for nested profiles:**
+- In `/shared/`: Match full specs (`development`, `development:frontend`) or parent-only (`development` matches `development:frontend`)
+- In `/parent/_shared/`: Match sub-profile names only (`frontend`, not `development:frontend`)
+
+Legacy `use-cases` frontmatter is also supported for backwards compatibility.
 
 ### 5. rulesync as the Generation Engine
 
@@ -340,12 +399,12 @@ amgr delegates actual config generation to `rulesync`. This provides:
 - Access to rulesync's target-specific output formats
 - Future compatibility with rulesync improvements
 
-### 6. No TypeScript
+### 6. TypeScript
 
-The codebase is pure ES modules JavaScript. This choice:
-- Reduces build complexity (no transpilation step)
-- Simplifies contribution (no TypeScript setup required)
-- Aligns with Node.js native ES modules support
+The codebase is written in TypeScript with ES modules. This choice:
+- Provides type safety and better IDE support
+- Enables better documentation through type definitions
+- Aligns with modern Node.js development practices
 
 ## External Dependencies
 
